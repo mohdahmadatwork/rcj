@@ -23,7 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-xw080)6sx&9yn01bwccimmegm0cy9$v#rco(w$)kjh4t@map=g'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = false
 
 ALLOWED_HOSTS = ['royalcraftjewelers.pythonanywhere.com','localhost','127.0.0.1']
 

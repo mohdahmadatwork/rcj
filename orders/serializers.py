@@ -58,6 +58,7 @@ class OrderStatusSerializer(serializers.ModelSerializer):
     status = serializers.CharField(source='order_status', read_only=True)
     currentStage = serializers.SerializerMethodField()
     description = serializers.CharField(read_only=True)
+    declinedReason = serializers.CharField(source='declined_reason', read_only=True)
     specialRequirements = serializers.CharField(source='special_requirements', read_only=True)
     diamondSize = serializers.CharField(source='diamond_size', read_only=True)
     goldWeight = serializers.CharField(source='gold_weight', read_only=True)
@@ -84,17 +85,19 @@ class OrderStatusSerializer(serializers.ModelSerializer):
             'goldWeight',
             'estimatedValue',
             'images',
+            'declinedReason',
         ]
 
     def get_currentStage(self, obj):
         stage_mapping = {
-            'new': 1,
-            'cad_done': 2,
-            'rpt_done': 3,
-            'casting': 4,
-            'ready': 5,
-            'delivered': 6,
             'declined': 0,
+            'new': 1,
+            'confirmed': 2,
+            'cad_done': 3,
+            'rpt_done': 4,
+            'casting': 5,
+            'ready': 6,
+            'delivered': 7,
         }
         return stage_mapping.get(obj.order_status, 1)
 

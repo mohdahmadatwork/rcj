@@ -9,7 +9,9 @@ User = get_user_model()
 
 class Order(models.Model):
     ORDER_STATUS_CHOICES = [
+        ('declined', 'Declined'),
         ('new', 'New'),
+        ('confirmed', 'Confirmed'),
         ('cad_done', 'CAD Done'),
         ('rpt_done', 'RPT Done'),
         ('casting', 'Casting'),
