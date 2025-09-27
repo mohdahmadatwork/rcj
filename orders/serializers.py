@@ -14,6 +14,9 @@ class OrderFileSerializer(serializers.ModelSerializer):
     
     def get_url(self, obj):
         if obj.file:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.file.url)
             return obj.file.url
         return None
 
@@ -29,15 +32,20 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         fields = [
             'full_name', 'contact_number', 'email', 'description',
             'special_requirements', 'diamond_size', 'gold_weight',
-            'preferred_delivery_date', 'files'
+            'preferred_delivery_date', 'address', 'files'
         ]
     
     def create(self, validated_data):
         files_data = validated_data.pop('files', [])
+        user = self.context['request'].user
+        
+        # Set customer and client_id from authenticated user
+        validated_data['customer'] = user
+        validated_data['client_id'] = user.client_id
+        
         order = Order.objects.create(**validated_data)
         
         for file_data in files_data:
-            # Determine file type based on content type
             file_type = 'image' if file_data.content_type.startswith('image') else 'video'
             OrderFile.objects.create(
                 order=order,
@@ -47,6 +55,15 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             )
         
         return order
+
+class CustomerOrderListSerializer(serializers.ModelSerializer):
+    """Serializer for customer's order list"""
+    class Meta:
+        model = Order
+        fields = [
+            'order_id', 'client_id', 'full_name', 'order_status', 
+            'created_at', 'preferred_delivery_date', 'estimated_value'
+        ]
 
 class OrderStatusSerializer(serializers.ModelSerializer):
     orderId = serializers.CharField(source='order_id', read_only=True)
@@ -101,12 +118,16 @@ class OrderStatusSerializer(serializers.ModelSerializer):
         }
         return stage_mapping.get(obj.order_status, 1)
 
+# Admin serializers remain the same
 class OrderListSerializer(serializers.ModelSerializer):
+    customer_name = serializers.CharField(source='customer.username', read_only=True)
+    
     class Meta:
         model = Order
         fields = [
-            'order_id', 'client_id', 'full_name', 'contact_number', 'email',
-            'order_status', 'created_at', 'preferred_delivery_date', 'estimated_value'
+            'order_id', 'client_id', 'customer_name', 'full_name', 
+            'contact_number', 'email', 'order_status', 'created_at', 
+            'preferred_delivery_date', 'estimated_value'
         ]
 
 class OrderUpdateSerializer(serializers.ModelSerializer):

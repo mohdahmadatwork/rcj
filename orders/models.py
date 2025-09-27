@@ -1,7 +1,6 @@
 # orders/models.py
 from django.db import models
 from django.contrib.auth import get_user_model
-from auditlog.registry import auditlog
 import uuid
 from datetime import datetime
 
@@ -20,7 +19,8 @@ class Order(models.Model):
     ]
     
     order_id = models.CharField(max_length=20, unique=True, editable=False)
-    client_id = models.CharField(max_length=20, editable=False)
+    client_id = models.CharField(max_length=20)  # This will be user's client_id
+    customer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders',default=1)  # New field
     full_name = models.CharField(max_length=255)
     contact_number = models.CharField(max_length=20)
     email = models.EmailField()
@@ -35,13 +35,11 @@ class Order(models.Model):
     address = models.TextField(default='',null=True,blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_orders')
     
     def save(self, *args, **kwargs):
         if not self.order_id:
             self.order_id = f"ORD{datetime.now().strftime('%Y%m%d')}{str(uuid.uuid4())[:6].upper()}"
-        if not self.client_id:
-            self.client_id = f"CLI{datetime.now().strftime('%Y%m%d')}{str(uuid.uuid4())[:6].upper()}"
         super().save(*args, **kwargs)
     
     def __str__(self):
@@ -75,7 +73,3 @@ class OrderLog(models.Model):
     
     def __str__(self):
         return f"{self.order.order_id} - {self.action} by {self.user}"
-
-# Register models for audit logging
-auditlog.register(Order)
-auditlog.register(OrderFile)

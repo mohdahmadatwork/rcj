@@ -3,9 +3,10 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    # Public APIs
+    # Customer APIs (require authentication)
     path('order/', views.OrderCreateView.as_view(), name='order-create'),
     path('order/status/', views.check_order_status, name='order-status'),
+    path('my-orders/', views.CustomerOrderListView.as_view(), name='my-orders'),
     
     # Admin APIs
     path('admin/orders/', views.OrderListView.as_view(), name='admin-order-list'),
