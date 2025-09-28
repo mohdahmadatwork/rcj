@@ -29,9 +29,23 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
         # Called only for new users
         user = super().populate_user(request, sociallogin, data)
 
-        # Generate unique username
-        first = (data.get("given_name") or "").strip().lower()
-        last = (data.get("family_name") or "").strip().lower() or ""
+        # Google payload fields
+        full_name   = data.get("name")        or ""
+        given_name  = data.get("given_name")  or ""
+        family_name = data.get("family_name") or ""
+
+        # If no family_name, try splitting full_name
+        if not family_name and full_name:
+            parts = full_name.strip().split()
+            if len(parts) > 1:
+                given_name  = parts[0]
+                family_name = parts[-1]
+
+        # Clean and lowercase
+        first = given_name.strip().lower() or "user"
+        last  = family_name.strip().lower() or "anon"
+
+        # Generate a random 4-digit suffix
         suffix = random.randint(1000, 9999)
         username = f"{first}.{last}.{suffix}".replace(" ", "")
         user.username   = username
