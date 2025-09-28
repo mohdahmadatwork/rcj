@@ -2,6 +2,12 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model, authenticate
 from rest_framework.authtoken.models import Token
+from dj_rest_auth.registration.serializers import RegisterSerializer
+# from rest_framework import serializers
+# from django.contrib.auth import get_user_model
+# from dj_rest_auth.registration.views import SocialLoginView
+# from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
+# from allauth.socialaccount.providers.oauth2.client import OAuth2Client
 
 User = get_user_model()
 
@@ -30,6 +36,18 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         user = User.objects.create_user(**validated_data)
         Token.objects.get_or_create(user=user)
         return user
+
+class CustomRegisterSerializer(RegisterSerializer):
+    first_name = serializers.CharField(required=False, allow_blank=True)
+    last_name = serializers.CharField(required=False, allow_blank=True)
+    phone = serializers.CharField(required=False, allow_blank=True)
+    
+    def custom_signup(self, request, user):
+        user.first_name = self.validated_data.get('first_name', '')
+        user.last_name = self.validated_data.get('last_name', '')
+        user.phone = self.validated_data.get('phone', '')
+        user.user_type = 'customer'
+        user.save(update_fields=['first_name', 'last_name', 'phone', 'user_type'])
 
 class UserLoginSerializer(serializers.Serializer):
     username = serializers.CharField()
