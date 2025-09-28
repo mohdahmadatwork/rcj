@@ -5,6 +5,12 @@ from rest_framework.authtoken.models import Token
 
 User = get_user_model()
 
+class UserDetailSerializer(serializers.ModelSerializer):
+    """Serializer for user details in login response"""
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'phone']
+
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
     password_confirm = serializers.CharField(write_only=True)
@@ -22,7 +28,6 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         validated_data.pop('password_confirm')
         validated_data['user_type'] = 'customer'
         user = User.objects.create_user(**validated_data)
-        # Token will be created automatically via signal or manually
         Token.objects.get_or_create(user=user)
         return user
 

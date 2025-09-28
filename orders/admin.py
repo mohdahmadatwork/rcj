@@ -28,7 +28,7 @@ class OrderAdmin(admin.ModelAdmin):
             'fields': ('order_id', 'client_id', 'order_status', 'declined_reason')
         }),
         ('Customer Details', {
-            'fields': ('full_name', 'contact_number', 'email', 'address')
+            'fields': ('customer','full_name', 'contact_number', 'email', 'address')
         }),
         ('Order Details', {
             'fields': ('description', 'special_requirements', 'diamond_size', 
