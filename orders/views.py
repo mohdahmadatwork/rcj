@@ -11,6 +11,12 @@ from .serializers import (
     OrderCreateSerializer, OrderStatusSerializer, CustomerOrderListSerializer,
     OrderListSerializer, OrderUpdateSerializer, OrderLogSerializer
 )
+from rest_framework.pagination import PageNumberPagination
+
+class CustomPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
 
 def is_admin_user(user):
     """Helper function to check if user is admin"""
@@ -42,7 +48,7 @@ class CustomerOrderListView(generics.ListAPIView):
     """Customer's own orders list"""
     serializer_class = CustomerOrderListSerializer
     permission_classes = [IsAuthenticated]
-    
+    pagination_class = CustomPagination
     def get_queryset(self):
         return Order.objects.filter(customer=self.request.user).order_by('-created_at')
 
