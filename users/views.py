@@ -17,6 +17,7 @@ from .serializers import (
 from dj_rest_auth.registration.views import SocialLoginView
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
 from allauth.socialaccount.providers.oauth2.client import OAuth2Client
+from .serializers import UserDetailSerializer
 User = get_user_model()
 
 class UserRegistrationView(generics.CreateAPIView):
@@ -183,11 +184,31 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
 
 class GoogleLogin(SocialLoginView):
     adapter_class = GoogleOAuth2Adapter
-    callback_url = None
     client_class = OAuth2Client
+    callback_url = None
     permission_classes = [AllowAny]
+
     def post(self, request, *args, **kwargs):
-        # Rename credential -> id_token for allauth
+        # Map access_token -> id_token
         if 'access_token' in request.data:
-            request.data['id_token'] = request.data['access_token']
-        return super().post(request, *args, **kwargs)
+            request.data['id_token'] = request.data.pop('access_token')
+        
+        # Perform the usual social login to get the token
+        original_response = super().post(request, *args, **kwargs)
+        if original_response.status_code != status.HTTP_200_OK:
+            return original_response
+        
+        # original_response.data contains {"key": "..."}
+        token = original_response.data.get('key')
+        
+        # Get the logged-in user
+        user = request.user  # dj-rest-auth sets request.user on successful login
+        
+        # Serialize user details
+        user_data = UserDetailSerializer(user).data
+        
+        # Return combined response
+        return Response({
+            'token': token,
+            'user': user_data
+        }, status=status.HTTP_200_OK)
