@@ -189,25 +189,24 @@ class GoogleLogin(SocialLoginView):
     permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
-        # Map access_token -> id_token
+        # Move access_token to id_token
         if 'access_token' in request.data:
-            request.data['id_token'] = request.data['access_token']
-        
-        # Perform the usual social login to get the token
-        original_response = super().post(request, *args, **kwargs)
-        if original_response.status_code != status.HTTP_200_OK:
-            return original_response
-        
-        # original_response.data contains {"key": "..."}
-        token = original_response.data.get('key')
-        
-        # Get the logged-in user
-        user = request.user  # dj-rest-auth sets request.user on successful login
-        
-        # Serialize user details
+            request.data['id_token'] = request.data.pop('access_token')
+
+        # Run the normal flow; serializer.validated_data contains 'user'
+        resp = super().post(request, *args, **kwargs)
+        if resp.status_code != status.HTTP_200_OK:
+            return resp
+
+        # The view sets `self.user` to the logged-in user
+        user = getattr(self, 'user', None)
+        if user is None:
+            # Fallback: get user from serializer
+            user = self.serializer.validated_data.get('user')
+
+        token = resp.data.get('key')
         user_data = UserDetailSerializer(user).data
-        
-        # Return combined response
+
         return Response({
             'token': token,
             'user': user_data
