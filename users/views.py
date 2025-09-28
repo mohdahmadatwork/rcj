@@ -185,8 +185,9 @@ class GoogleLogin(SocialLoginView):
     adapter_class = GoogleOAuth2Adapter
     callback_url = None
     client_class = OAuth2Client
+    permission_classes = [AllowAny]
     def post(self, request, *args, **kwargs):
         # Rename credential -> id_token for allauth
         if 'access_token' in request.data:
-            request.data['id_token'] = request.data.pop('access_token')
+            request.data['id_token'] = request.data['access_token']
         return super().post(request, *args, **kwargs)
