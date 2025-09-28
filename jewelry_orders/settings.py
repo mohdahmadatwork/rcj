@@ -249,3 +249,6 @@ REST_AUTH = {
     'SESSION_LOGIN': False,
     'REGISTER_SERIALIZER': 'users.serializers.CustomRegisterSerializer',
 }
+
+# settings.py
+SOCIALACCOUNT_ADAPTER = 'users.adapters.CustomSocialAccountAdapter'
