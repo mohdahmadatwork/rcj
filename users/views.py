@@ -191,7 +191,7 @@ class GoogleLogin(SocialLoginView):
     def post(self, request, *args, **kwargs):
         # Map access_token -> id_token
         if 'access_token' in request.data:
-            request.data['id_token'] = request.data.pop('access_token')
+            request.data['id_token'] = request.data['access_token']
         
         # Perform the usual social login to get the token
         original_response = super().post(request, *args, **kwargs)
