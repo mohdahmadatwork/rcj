@@ -32,7 +32,7 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         fields = [
             'full_name', 'contact_number', 'email', 'description',
             'special_requirements', 'diamond_size', 'gold_weight',
-            'preferred_delivery_date', 'address', 'files'
+            'preferred_delivery_date', 'address', 'files', 'gold_color'
         ]
     
     def create(self, validated_data):
@@ -62,7 +62,7 @@ class CustomerOrderListSerializer(serializers.ModelSerializer):
         model = Order
         fields = [
             'order_id', 'client_id', 'full_name', 'order_status', 
-            'created_at', 'preferred_delivery_date', 'estimated_value'
+            'created_at', 'preferred_delivery_date', 'gold_color'
         ]
 
 class OrderStatusSerializer(serializers.ModelSerializer):
@@ -79,10 +79,10 @@ class OrderStatusSerializer(serializers.ModelSerializer):
     specialRequirements = serializers.CharField(source='special_requirements', read_only=True)
     diamondSize = serializers.CharField(source='diamond_size', read_only=True)
     goldWeight = serializers.CharField(source='gold_weight', read_only=True)
-    estimatedValue = serializers.CharField(source='estimated_value', read_only=True)
+    # estimatedValue = serializers.CharField(source='estimated_value', read_only=True)
     address = serializers.CharField(read_only=True)
     images = OrderFileSerializer(source='files', many=True, read_only=True)
-
+    goldColor = serializers.CharField(source='gold_color', read_only=True)
     class Meta:
         model = Order
         fields = [
@@ -100,9 +100,10 @@ class OrderStatusSerializer(serializers.ModelSerializer):
             'specialRequirements',
             'diamondSize',
             'goldWeight',
-            'estimatedValue',
+            # 'estimatedValue',
             'images',
             'declinedReason',
+            'goldColor',
         ]
 
     def get_currentStage(self, obj):

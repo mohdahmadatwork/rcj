@@ -28,6 +28,7 @@ class Order(models.Model):
     special_requirements = models.TextField(blank=True, null=True)
     diamond_size = models.CharField(max_length=100, blank=True, null=True)
     gold_weight = models.CharField(max_length=100, blank=True, null=True)
+    gold_color = models.CharField(max_length=200, blank=True, null=True)
     preferred_delivery_date = models.DateField()
     order_status = models.CharField(max_length=20, choices=ORDER_STATUS_CHOICES, default='new')
     declined_reason = models.TextField(blank=True, null=True)
