@@ -29,10 +29,13 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
         # Called only for new users
         user = super().populate_user(request, sociallogin, data)
 
-        # Google payload fields
-        full_name   = data.get("name")        or ""
-        given_name  = data.get("given_name")  or ""
-        family_name = data.get("family_name") or ""
+         # Get data from extra_data first, then fallback to data parameter
+        extra_data = sociallogin.account.extra_data
+        
+        # Google payload fields - check extra_data first
+        full_name   = extra_data.get("name") or data.get("name") or ""
+        given_name  = extra_data.get("given_name") or data.get("given_name") or ""
+        family_name = extra_data.get("family_name") or data.get("family_name") or ""
 
         # If no family_name, try splitting full_name
         if not family_name and full_name:
