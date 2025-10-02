@@ -1,6 +1,6 @@
 # orders/admin.py
 from django.contrib import admin
-from .models import Order, OrderFile, OrderLog
+from .models import Order, OrderFile, OrderLog, Contact
 
 class OrderFileInline(admin.TabularInline):
     model = OrderFile
@@ -66,3 +66,39 @@ class OrderLogAdmin(admin.ModelAdmin):
     
     def has_change_permission(self, request, obj=None):
         return False  # Prevent editing of logs
+
+
+@admin.register(Contact)
+class ContactAdmin(admin.ModelAdmin):
+    list_display = [
+        'ticket_number', 'full_name', 'email', 'subject', 
+        'status', 'order_related', 'created_at'
+    ]
+    list_filter = [
+        'status', 'order_related', 'preferred_contact_method', 
+        'created_at'
+    ]
+    search_fields = [
+        'ticket_number', 'full_name', 'email', 'subject', 
+        'order_id'
+    ]
+    readonly_fields = ['id', 'ticket_number', 'created_at', 'updated_at']
+    
+    fieldsets = (
+        ('Contact Information', {
+            'fields': ('ticket_number', 'user', 'full_name', 'email', 'phone')
+        }),
+        ('Request Details', {
+            'fields': ('subject', 'message', 'preferred_contact_method')
+        }),
+        ('Order Related', {
+            'fields': ('order_related', 'order_id', 'related_order')
+        }),
+        ('Status & Response', {
+            'fields': ('status', 'admin_response', 'responded_by', 'responded_at')
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )

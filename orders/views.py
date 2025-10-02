@@ -6,12 +6,16 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
-from .models import Order, OrderLog
+from .models import Order, OrderLog, Contact
 from .serializers import (
     OrderCreateSerializer, OrderStatusSerializer, CustomerOrderListSerializer,
-    OrderListSerializer, OrderUpdateSerializer, OrderLogSerializer
+    OrderListSerializer, OrderUpdateSerializer, OrderLogSerializer, 
+    ContactSerializer, ContactResponseSerializer
 )
 from rest_framework.pagination import PageNumberPagination
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
 
 class CustomPagination(PageNumberPagination):
     page_size = 10
@@ -240,3 +244,103 @@ class AdminOrderCreateView(generics.CreateAPIView):
             'order_id': order.order_id,
             'client_id': order.client_id
         }, status=status.HTTP_201_CREATED)
+
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])  # Allow both anonymous and authenticated users
+def contact_us(request):
+    """
+    Create a new contact/support request
+    """
+    serializer = ContactSerializer(data=request.data)
+    
+    if serializer.is_valid():
+        contact_data = serializer.validated_data
+        
+        # Determine user assignment
+        user_to_assign = None
+        
+        if request.user and request.user.is_authenticated:
+            # If user is logged in, assign to them
+            user_to_assign = request.user
+        else:
+            # Check if email matches an existing user
+            try:
+                user_to_assign = User.objects.get(email=contact_data['email'])
+            except User.DoesNotExist:
+                # Assign to user with ID 2 (admin/support user)
+                try:
+                    user_to_assign = User.objects.get(id=2)
+                except User.DoesNotExist:
+                    # Fallback to first admin user
+                    user_to_assign = User.objects.filter(is_staff=True).first()
+        
+        # Create contact record
+        contact = Contact.objects.create(
+            user=user_to_assign,
+            full_name=contact_data['full_name'],
+            email=contact_data['email'],
+            phone=contact_data['phone'],
+            subject=contact_data['subject'],
+            message=contact_data['message'],
+            preferred_contact_method=contact_data['preferred_contact_method'],
+            order_related=contact_data.get('order_related', False),
+            order_id=contact_data.get('order_id', None),
+        )
+        
+        # Serialize response
+        response_serializer = ContactResponseSerializer(contact)
+        
+        # Optional: Send email notification to admin (you can add this later)
+        # send_contact_notification_email.delay(contact.id)
+        
+        return Response(
+            response_serializer.data,
+            status=status.HTTP_201_CREATED
+        )
+    
+    # Return validation errors
+    errors = []
+    for field, messages in serializer.errors.items():
+        for message in messages:
+            errors.append({
+                'field': field,
+                'message': str(message)
+            })
+    
+    return Response(
+        {'errors': errors},
+        status=status.HTTP_400_BAD_REQUEST
+    )
+
+# Optional: Get user's contact history (for authenticated users)
+@api_view(['GET'])
+def my_contact_requests(request):
+    """
+    Get current user's contact requests
+    """
+    if not request.user.is_authenticated:
+        return Response(
+            {'error': 'Authentication required'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+    
+    contacts = Contact.objects.filter(user=request.user)
+    
+    # Simple serialization for listing
+    data = []
+    for contact in contacts:
+        data.append({
+            'id': str(contact.id),
+            'ticket_number': contact.ticket_number,
+            'subject': contact.subject,
+            'status': contact.status,
+            'order_related': contact.order_related,
+            'order_id': contact.order_id,
+            'created_at': contact.created_at.isoformat(),
+            'admin_response': contact.admin_response,
+            'responded_at': contact.responded_at.isoformat() if contact.responded_at else None,
+        })
+    
+    return Response(data, status=status.HTTP_200_OK)

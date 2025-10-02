@@ -1,16 +1,18 @@
 # orders/serializers.py
 from rest_framework import serializers
-from .models import Order, OrderFile, OrderLog
+from .models import Order, OrderFile, OrderLog, Contact
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
 class OrderFileSerializer(serializers.ModelSerializer):
+    fileType = serializers.CharField(source='file_type', read_only=True)
+    uploadedAt = serializers.CharField(source='uploaded_at', read_only=True)
     url = serializers.SerializerMethodField()
     
     class Meta:
         model = OrderFile
-        fields = ['id', 'url', 'caption', 'stage', 'uploaded_at', 'file_type']
+        fields = ['id', 'url', 'caption', 'stage', 'uploadedAt', 'fileType']
     
     def get_url(self, obj):
         if obj.file:
@@ -142,3 +144,43 @@ class OrderLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = OrderLog
         fields = ['action', 'changes', 'timestamp', 'user_name']
+
+
+
+class ContactSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Contact
+        fields = [
+            'full_name', 'email', 'phone', 'subject', 'message',
+            'preferred_contact_method', 'order_related', 'order_id'
+        ]
+    
+    def validate(self, data):
+        # If order_related is True, order_id should be provided
+        if data.get('order_related') and not data.get('order_id'):
+            raise serializers.ValidationError({
+                'order_id': 'Order ID is required when the inquiry is order-related.'
+            })
+        
+        # Validate order_id exists if provided
+        if data.get('order_id'):
+            try:
+                Order.objects.get(order_id=data['order_id'])
+            except Order.DoesNotExist:
+                raise serializers.ValidationError({
+                    'order_id': 'Invalid order ID provided.'
+                })
+        
+        return data
+
+class ContactResponseSerializer(serializers.ModelSerializer):
+    id = serializers.CharField(read_only=True)
+    ticket_number = serializers.CharField(read_only=True)
+    message = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Contact
+        fields = ['id', 'message', 'ticket_number']
+    
+    def get_message(self, obj):
+        return f"Your contact request has been submitted successfully. Ticket Number: {obj.ticket_number}"

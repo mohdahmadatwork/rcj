@@ -3,6 +3,7 @@ from django.db import models
 from django.contrib.auth import get_user_model
 import uuid
 from datetime import datetime
+from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
@@ -74,3 +75,85 @@ class OrderLog(models.Model):
     
     def __str__(self):
         return f"{self.order.order_id} - {self.action} by {self.user}"
+
+
+
+
+
+class Contact(models.Model):
+    CONTACT_METHOD_CHOICES = [
+        ('email', 'Email'),
+        ('phone', 'Phone'),
+        ('either', 'Either'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('new', 'New'),
+        ('in_progress', 'In Progress'),
+        ('resolved', 'Resolved'),
+        ('closed', 'Closed'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    ticket_number = models.CharField(max_length=20, unique=True, blank=True)
+    
+    # User information
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
+    full_name = models.CharField(max_length=100)
+    email = models.EmailField()
+    phone = models.CharField(max_length=20)
+    
+    # Contact details
+    subject = models.CharField(max_length=200)
+    message = models.TextField()
+    preferred_contact_method = models.CharField(max_length=10, choices=CONTACT_METHOD_CHOICES)
+    
+    # Order related
+    order_related = models.BooleanField(default=False)
+    order_id = models.CharField(max_length=50, blank=True, null=True)
+    related_order = models.ForeignKey('Order', on_delete=models.SET_NULL, null=True, blank=True)
+    
+    # Status tracking
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    # Admin response
+    admin_response = models.TextField(blank=True, null=True)
+    responded_at = models.DateTimeField(null=True, blank=True)
+    responded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='contact_responses')
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def save(self, *args, **kwargs):
+        if not self.ticket_number:
+            # Generate ticket number like CT202510020001
+            from django.utils import timezone
+            today = timezone.now()
+            date_str = today.strftime('%Y%m%d')
+            
+            # Get the last ticket number for today
+            last_contact = Contact.objects.filter(
+                ticket_number__startswith=f'CT{date_str}'
+            ).order_by('-ticket_number').first()
+            
+            if last_contact:
+                last_num = int(last_contact.ticket_number[-4:])
+                next_num = last_num + 1
+            else:
+                next_num = 1
+                
+            self.ticket_number = f'CT{date_str}{next_num:04d}'
+        
+        # Link to related order if order_id is provided
+        if self.order_id and not self.related_order:
+            try:
+                self.related_order = Order.objects.get(order_id=self.order_id)
+            except Order.DoesNotExist:
+                pass
+                
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f'{self.ticket_number} - {self.subject}'

@@ -7,6 +7,8 @@ urlpatterns = [
     path('order/', views.OrderCreateView.as_view(), name='order-create'),
     path('order/status/', views.check_order_status, name='order-status'),
     path('my-orders/', views.CustomerOrderListView.as_view(), name='my-orders'),
+    path('contact/', views.contact_us, name='contact-us'),
+    path('my-contacts/', views.my_contact_requests, name='my-contact-requests'),
     
     # Admin APIs
     path('admin/orders/', views.OrderListView.as_view(), name='admin-order-list'),
