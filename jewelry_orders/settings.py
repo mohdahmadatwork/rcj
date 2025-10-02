@@ -112,7 +112,8 @@ MIDDLEWARE = [
 ]
 
 CORS_ALLOWED_ORIGINS = [
-    "https://royalcraftjewelers-129ef.web.app"
+    "https://royalcraftjewelers-129ef.web.app",
+    "https://rcj-production.up.railway.app"
 ]
 
 # For development only - allows all origins (less secure)
