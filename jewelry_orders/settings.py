@@ -110,7 +110,11 @@ MIDDLEWARE = [
     'auditlog.middleware.AuditlogMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
 ]
-
+CSRF_TRUSTED_ORIGINS = [
+    'https://rcj-production.up.railway.app',
+    'https://royalcraftjewelers.pythonanywhere.com',
+    'http://localhost',
+]
 CORS_ALLOWED_ORIGINS = [
     "https://royalcraftjewelers-129ef.web.app",
     "https://rcj-production.up.railway.app"
