@@ -30,7 +30,7 @@ SITE_ID = 1
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['royalcraftjewelers.pythonanywhere.com','localhost','127.0.0.1','.railway.app']
+ALLOWED_HOSTS = ['royalcraftjewelers.pythonanywhere.com','localhost','127.0.0.1','.railway.app','rcj-production.up.railway.app']
 
 
 # Application definition
