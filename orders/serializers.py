@@ -184,3 +184,26 @@ class ContactResponseSerializer(serializers.ModelSerializer):
     
     def get_message(self, obj):
         return f"Your contact request has been submitted successfully. Ticket Number: {obj.ticket_number}"
+
+
+# orders/serializers.py
+from rest_framework import serializers
+from .models import Order
+
+class AdminOrderListSerializer(serializers.ModelSerializer):
+    id              = serializers.CharField(source='pk')
+    order_number    = serializers.CharField(source='order_id')
+    estimated_price = serializers.CharField(source='estimated_value')
+    final_price     = serializers.FloatField(default=2.0)
+    status          = serializers.CharField(source='order_status')
+    notes           = serializers.CharField(default='', allow_blank=True)
+
+    class Meta:
+        model = Order
+        fields = [
+            'id', 'order_number', 'full_name', 'contact_number', 'email',
+            'description', 'special_requirements', 'diamond_size',
+            'gold_weight', 'gold_color', 'preferred_delivery_date',
+            'address', 'status', 'created_at', 'updated_at',
+            'estimated_price', 'final_price', 'notes'
+        ]

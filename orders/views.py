@@ -1,19 +1,22 @@
 # orders/views.py
 from rest_framework import generics, status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.shortcuts import get_object_or_404
-from django.db.models import Q
+from django.db.models import Count, Sum, Avg, Q
 from .models import Order, OrderLog, Contact
 from .serializers import (
     OrderCreateSerializer, OrderStatusSerializer, CustomerOrderListSerializer,
     OrderListSerializer, OrderUpdateSerializer, OrderLogSerializer, 
-    ContactSerializer, ContactResponseSerializer
+    ContactSerializer, ContactResponseSerializer, AdminOrderListSerializer
 )
 from rest_framework.pagination import PageNumberPagination
 from django.contrib.auth import get_user_model
+import random
+from datetime import datetime, timedelta
+from django.utils import timezone
 
 User = get_user_model()
 
@@ -24,7 +27,7 @@ class CustomPagination(PageNumberPagination):
 
 def is_admin_user(user):
     """Helper function to check if user is admin"""
-    return user.is_authenticated and hasattr(user, 'user_type') and user.user_type == 'admin'
+    return user.is_authenticated and hasattr(user, 'user_type') and user.user_type.lower() == 'admin'
 
 class OrderCreateView(generics.CreateAPIView):
     """Authenticated API for creating orders"""
@@ -81,19 +84,22 @@ def check_order_status(request):
 
 class OrderListView(generics.ListAPIView):
     """Admin API for listing all orders"""
-    serializer_class = OrderListSerializer
+    serializer_class = AdminOrderListSerializer
     permission_classes = [IsAuthenticated]
-    
+    pagination_class = CustomPagination
+
+
     def get_queryset(self):
-        if not is_admin_user(self.request.user):
+        user = self.request.user
+        if not is_admin_user(user):
             return Order.objects.none()
-        
-        queryset = Order.objects.all().order_by('-created_at')
-        
-        # Search functionality
-        search = self.request.query_params.get('search', None)
+
+        qs = Order.objects.all().order_by('-created_at')
+
+        # Search
+        search = self.request.query_params.get('search')
         if search:
-            queryset = queryset.filter(
+            qs = qs.filter(
                 Q(order_id__icontains=search) |
                 Q(client_id__icontains=search) |
                 Q(full_name__icontains=search) |
@@ -101,13 +107,13 @@ class OrderListView(generics.ListAPIView):
                 Q(contact_number__icontains=search) |
                 Q(customer__username__icontains=search)
             )
-        
-        # Filter by status
-        status_filter = self.request.query_params.get('status', None)
+
+        # Status filter
+        status_filter = self.request.query_params.get('status')
         if status_filter:
-            queryset = queryset.filter(order_status=status_filter)
-            
-        return queryset
+            qs = qs.filter(order_status=status_filter)
+
+        return qs
 
 class OrderDetailView(generics.RetrieveAPIView):
     """Admin API for viewing order details"""
@@ -344,3 +350,191 @@ def my_contact_requests(request):
         })
     
     return Response(data, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsAdminUser])
+def admin_dashboard_stats(request):
+    """
+    Get comprehensive dashboard statistics for admin
+    """
+    try:
+        # Get date ranges
+        today = timezone.now().date()
+        this_month_start = today.replace(day=1)
+        last_30_days = today - timedelta(days=30)
+        
+        # Order Statistics
+        total_orders = Order.objects.count()
+        new_orders = Order.objects.filter(order_status='new').count()
+        pending_orders = Order.objects.filter(
+            order_status__in=['confirmed', 'cad_done', 'rpt_done', 'casting']
+        ).count()
+        completed_orders = Order.objects.filter(order_status='delivered').count()
+        cancelled_orders = Order.objects.filter(order_status='declined').count()
+        todays_deliveries = Order.objects.filter(
+            order_status='delivered',
+            updated_at__date=today
+        ).count()
+        
+        # Revenue (sum of estimated_value for delivered orders)
+        monthly_revenue = Order.objects.filter(
+            order_status='delivered',
+            created_at__gte=this_month_start
+        ).aggregate(
+            total=Sum('estimated_value')
+        )['total'] or 0.0
+        
+        # Recent Orders (last 10)
+        recent_orders_qs = Order.objects.select_related('customer').order_by('-created_at')[:10]
+        recent_orders = []
+        
+        for order in recent_orders_qs:
+            # Assign random priority since it's not in model
+            priority = random.choice(['low', 'medium', 'high', 'urgent'])
+            
+            recent_orders.append({
+                'id': order.order_id,
+                'customer_name': order.full_name,
+                'jewelry_type': order.description[:50] + '...' if len(order.description) > 50 else order.description,
+                'status': order.order_status,
+                'total_amount': float(order.estimated_value),
+                'created_at': order.created_at.isoformat(),
+                'priority': priority
+            })
+        
+        # Recent Contacts (last 10)
+        recent_contacts_qs = Contact.objects.order_by('-created_at')[:10]
+        recent_contacts = []
+        
+        for contact in recent_contacts_qs:
+            # Map contact status to expected format
+            status_mapping = {
+                'new': 'new',
+                'in_progress': 'in-progress',
+                'resolved': 'resolved',
+                'closed': 'resolved'
+            }
+            
+            recent_contacts.append({
+                'id': str(contact.id),
+                'customer_name': contact.full_name,
+                'email': contact.email,
+                'subject': contact.subject,
+                'status': status_mapping.get(contact.status, 'new'),
+                'created_at': contact.created_at.isoformat(),
+                'category': 'Order Related' if contact.order_related else 'General Inquiry'
+            })
+        
+        # Performance Metrics
+        total_delivered = Order.objects.filter(order_status='delivered').count()
+        completion_rate = (total_delivered / total_orders * 100) if total_orders > 0 else 0.0
+        
+        avg_order_value = Order.objects.filter(
+            order_status='delivered',
+            estimated_value__gt=0
+        ).aggregate(
+            avg=Avg('estimated_value')
+        )['avg'] or 0.0
+        
+        # Default customer satisfaction (you can implement this with a rating system later)
+        customer_satisfaction = 4.2  # Default value
+        
+        # Order Trends (last 30 days)
+        order_trends = []
+        for i in range(30):
+            date = today - timedelta(days=i)
+            orders_count = Order.objects.filter(created_at__date=date).count()
+            revenue = Order.objects.filter(
+                order_status='delivered',
+                created_at__date=date
+            ).aggregate(
+                total=Sum('estimated_value')
+            )['total'] or 0.0
+            
+            order_trends.append({
+                'date': date.isoformat(),
+                'orders_count': orders_count,
+                'revenue': float(revenue)
+            })
+        
+        # Reverse to get chronological order
+        order_trends.reverse()
+        
+        # Revenue Trends (last 12 months)
+        revenue_trends = []
+        for i in range(12):
+            # Calculate month start
+            if today.month - i <= 0:
+                month = today.month - i + 12
+                year = today.year - 1
+            else:
+                month = today.month - i
+                year = today.year
+            
+            month_start = datetime(year, month, 1).date()
+            if month == 12:
+                month_end = datetime(year + 1, 1, 1).date() - timedelta(days=1)
+            else:
+                month_end = datetime(year, month + 1, 1).date() - timedelta(days=1)
+            
+            month_orders = Order.objects.filter(
+                created_at__date__gte=month_start,
+                created_at__date__lte=month_end
+            ).count()
+            
+            month_revenue = Order.objects.filter(
+                order_status='delivered',
+                created_at__date__gte=month_start,
+                created_at__date__lte=month_end
+            ).aggregate(
+                total=Sum('estimated_value')
+            )['total'] or 0.0
+            
+            month_name = datetime(year, month, 1).strftime('%b %Y')
+            
+            revenue_trends.append({
+                'month': month_name,
+                'revenue': float(month_revenue),
+                'orders': month_orders
+            })
+        
+        # Reverse to get chronological order
+        revenue_trends.reverse()
+        
+        # Prepare response data
+        dashboard_data = {
+            # Order Statistics
+            'total_orders': total_orders,
+            'new_orders': new_orders,
+            'pending_orders': pending_orders,
+            'completed_orders': completed_orders,
+            'cancelled_orders': cancelled_orders,
+            'todays_deliveries': todays_deliveries,
+            'monthly_revenue': float(monthly_revenue),
+            
+            # Recent Activity
+            'recent_orders': recent_orders,
+            'recent_contacts': recent_contacts,
+            
+            # Performance Metrics
+            'completion_rate': round(completion_rate, 2),
+            'avg_order_value': round(float(avg_order_value), 2),
+            'customer_satisfaction': customer_satisfaction,
+            
+            # Trends
+            'order_trends': order_trends,
+            'revenue_trends': revenue_trends
+        }
+        
+        return Response({
+            'success': True,
+            'data': dashboard_data
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'success': False,
+            'error': 'Failed to fetch dashboard statistics',
+            'details': [str(e)]
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

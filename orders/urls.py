@@ -11,6 +11,7 @@ urlpatterns = [
     path('my-contacts/', views.my_contact_requests, name='my-contact-requests'),
     
     # Admin APIs
+    path('admin/dashboard-stats/', views.admin_dashboard_stats, name='admin-dashboard-stats'),
     path('admin/orders/', views.OrderListView.as_view(), name='admin-order-list'),
     path('admin/orders/<str:order_id>/', views.OrderDetailView.as_view(), name='admin-order-detail'),
     path('admin/orders/<str:order_id>/accept-decline/', views.accept_decline_order, name='order-accept-decline'),
