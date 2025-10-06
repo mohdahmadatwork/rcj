@@ -2,6 +2,8 @@
 from rest_framework import serializers
 from .models import Order, OrderFile, OrderLog, Contact
 from django.contrib.auth import get_user_model
+from django.utils import timezone
+
 
 User = get_user_model()
 
@@ -207,3 +209,69 @@ class AdminOrderListSerializer(serializers.ModelSerializer):
             'address', 'status', 'created_at', 'updated_at',
             'estimated_price', 'final_price', 'notes'
         ]
+
+
+class ContactAdminSerializer(serializers.ModelSerializer):
+    phone_number = serializers.CharField(source='phone')
+    is_related_to_order = serializers.BooleanField(source='order_related')
+    related_order_id = serializers.CharField(source='order_id', allow_null=True)
+    user_id = serializers.SerializerMethodField()
+    is_registered_user = serializers.SerializerMethodField()
+    priority = serializers.SerializerMethodField()
+    ticket_number = serializers.CharField()
+    status = serializers.SerializerMethodField()
+    admin_notes = serializers.CharField(source='admin_response', allow_null=True, required=False)
+    replied_at = serializers.DateTimeField(source='responded_at', allow_null=True, required=False)
+    replied_by = serializers.SerializerMethodField()
+    source = serializers.SerializerMethodField()
+    class Meta:
+        model = Contact
+        fields = [
+            'id', 'full_name', 'email', 'phone_number', 'preferred_contact_method',
+            'subject', 'message', 'is_related_to_order', 'related_order_id',
+            'created_at', 'updated_at', 'status', 'priority', 'user_id',
+            'is_registered_user', 'source', 'ticket_number',
+            'admin_notes', 'replied_at', 'replied_by'
+        ]
+
+    def get_user_id(self, obj):
+        return str(obj.user.id) if obj.user else None
+
+    def get_is_registered_user(self, obj):
+        return obj.user is not None
+
+    def get_replied_by(self, obj):
+        return obj.responded_by.username if obj.responded_by else None
+
+    def get_status(self, obj):
+        mapping = {
+            'new': 'new',
+            'in_progress': 'replied',
+            'resolved': 'resolved',
+            'closed': 'archived'
+        }
+        return mapping.get(obj.status, 'new')
+
+    def get_priority(self, obj):
+        score = 0
+        # Order related
+        if obj.order_related:
+            score += 2
+        # Recency
+        hours = (timezone.now() - obj.created_at).total_seconds() / 3600
+        if hours < 24:
+            score += 2
+        elif hours < 72:
+            score += 1
+        # Urgency keywords
+        keywords = ['urgent', 'emergency', 'asap', 'immediately', 'help', 'problem', 'issue', 'error', 'delivery', 'missing']
+        text = f"{obj.subject} {obj.message}".lower()
+        if any(kw in text for kw in keywords):
+            score += 1
+        if score >= 4:
+            return 'high'
+        if score >= 2:
+            return 'medium'
+        return 'low'
+    def get_source(self, obj):
+        return 'website'

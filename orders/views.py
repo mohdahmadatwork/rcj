@@ -10,7 +10,7 @@ from .models import Order, OrderLog, Contact
 from .serializers import (
     OrderCreateSerializer, OrderStatusSerializer, CustomerOrderListSerializer,
     OrderListSerializer, OrderUpdateSerializer, OrderLogSerializer, 
-    ContactSerializer, ContactResponseSerializer, AdminOrderListSerializer
+    ContactSerializer, ContactResponseSerializer, AdminOrderListSerializer, ContactAdminSerializer
 )
 from rest_framework.pagination import PageNumberPagination
 from django.contrib.auth import get_user_model
@@ -538,3 +538,49 @@ def admin_dashboard_stats(request):
             'error': 'Failed to fetch dashboard statistics',
             'details': [str(e)]
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# Add this to your views.py file
+
+class AdminContactListView(generics.ListAPIView):
+    """
+    Admin API for listing all contact inquiries.
+    """
+    serializer_class = ContactAdminSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = CustomPagination
+
+    def get_queryset(self):
+        user = self.request.user
+        if not is_admin_user(user):
+            return Contact.objects.none()
+
+        qs = (
+            Contact.objects
+            .select_related('user', 'related_order', 'responded_by')
+            .order_by('-created_at')
+        )
+
+        # Search across relevant fields
+        search = self.request.query_params.get('search')
+        if search:
+            qs = qs.filter(
+                Q(ticket_number__icontains=search) |
+                Q(full_name__icontains=search) |
+                Q(email__icontains=search) |
+                Q(phone__icontains=search) |
+                Q(subject__icontains=search) |
+                Q(order_id__icontains=search)
+            )
+
+        # Status filter
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+
+        # Order-related filter
+        order_related = self.request.query_params.get('order_related')
+        if order_related is not None:
+            qs = qs.filter(order_related=order_related.lower() == 'true')
+
+        return qs
