@@ -8,6 +8,8 @@ urlpatterns = [
     path('logout/', views.user_logout, name='user-logout'),
     path('profile/', views.UserProfileView.as_view(), name='user-profile'),
     path('dashboard/', views.customer_dashboard, name='customer-dashboard'),
+    path('admin/customers/', views.AdminCustomerListView.as_view(), name='admin-customer-list'),
+    path('admin/customers/lookup/', views.AdminCustomerLookupView.as_view(), name='admin-customer-lookup'),
      # Add Google login
     path('google/', views.GoogleLogin.as_view(), name='google_login'),
     
@@ -15,3 +17,4 @@ urlpatterns = [
     path('', include('dj_rest_auth.urls')),
     path('registration/', include('dj_rest_auth.registration.urls')),
 ]
+

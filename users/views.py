@@ -12,13 +12,27 @@ from .serializers import (
     UserRegistrationSerializer, 
     UserLoginSerializer, 
     UserProfileSerializer,
-    UserDetailSerializer
+    UserDetailSerializer,
+    CustomerListSerializer,
+    CustomerLookupSerializer
 )
 from dj_rest_auth.registration.views import SocialLoginView
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
 from allauth.socialaccount.providers.oauth2.client import OAuth2Client
 from .serializers import UserDetailSerializer
+from rest_framework.pagination import PageNumberPagination
+
 User = get_user_model()
+
+class CustomPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+def is_admin_user(user):
+    """Helper function to check if user is admin"""
+    return user.is_authenticated and hasattr(user, 'user_type') and user.user_type.lower() == 'admin'
+
 
 class UserRegistrationView(generics.CreateAPIView):
     serializer_class = UserRegistrationSerializer
@@ -211,3 +225,66 @@ class GoogleLogin(SocialLoginView):
             'token': token,
             'user': user_data
         }, status=status.HTTP_200_OK)
+
+
+class AdminCustomerListView(generics.ListAPIView):
+    """Admin API for listing all customers"""
+    serializer_class = CustomerListSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = CustomPagination
+
+    def get_queryset(self):
+        if not is_admin_user(self.request.user):
+            return User.objects.none()
+
+        # Get only customers with related order data for efficiency
+        queryset = User.objects.filter(user_type='customer').select_related().prefetch_related('orders')
+
+        # Search functionality
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(
+                Q(username__icontains=search) |
+                Q(email__icontains=search) |
+                Q(phone__icontains=search) |
+                Q(client_id__icontains=search) |
+                Q(first_name__icontains=search) |
+                Q(last_name__icontains=search)
+            )
+
+        # Status filter
+        status_filter = self.request.query_params.get('status')
+        if status_filter == 'active':
+            queryset = queryset.filter(is_active=True)
+        elif status_filter == 'inactive':
+            queryset = queryset.filter(is_active=False)
+
+        # Order by most recent customers first
+        return queryset.order_by('-date_joined')
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+            'success': True,
+            'result': serializer.data
+        })
+
+
+class AdminCustomerLookupView(generics.ListAPIView):
+    """Admin API for listing all customers without pagination for lookup"""
+    serializer_class = CustomerLookupSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None  # Disable pagination
+
+    def get_queryset(self):
+        user = self.request.user
+        if not user.is_admin_user():
+            return User.objects.none()
+        return User.objects.filter(user_type='customer').order_by('username')

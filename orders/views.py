@@ -11,7 +11,8 @@ from .serializers import (
     OrderCreateSerializer, OrderStatusSerializer, CustomerOrderListSerializer,
     OrderListSerializer, OrderUpdateSerializer, OrderLogSerializer, 
     ContactSerializer, ContactResponseSerializer, AdminOrderListSerializer, 
-    ContactAdminSerializer, ContactAdminUpdateSerializer, OrderAdminStatusSerializer, OrderAdminUpdateSerializer
+    ContactAdminSerializer, ContactAdminUpdateSerializer, OrderAdminStatusSerializer, 
+    OrderAdminUpdateSerializer, OrderAdminCreateSerializer
 )
 from rest_framework.pagination import PageNumberPagination
 from django.contrib.auth import get_user_model
@@ -276,7 +277,7 @@ def order_logs(request, order_id):
 class AdminOrderCreateView(generics.CreateAPIView):
     """Admin API for creating orders"""
     queryset = Order.objects.all()
-    serializer_class = OrderCreateSerializer
+    serializer_class = OrderAdminCreateSerializer
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
     

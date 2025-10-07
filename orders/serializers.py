@@ -1,6 +1,7 @@
 # orders/serializers.py
 from rest_framework import serializers
 from .models import Order, OrderFile, OrderLog, Contact
+from users.models import CustomUser
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
@@ -47,6 +48,41 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         validated_data['customer'] = user
         validated_data['client_id'] = user.client_id
         
+        order = Order.objects.create(**validated_data)
+        
+        for file_data in files_data:
+            file_type = 'image' if file_data.content_type.startswith('image') else 'video'
+            OrderFile.objects.create(
+                order=order,
+                file=file_data,
+                file_type=file_type,
+                stage='initial'
+            )
+        
+        return order
+class OrderAdminCreateSerializer(serializers.ModelSerializer):
+    files = serializers.ListField(
+        child=serializers.FileField(),
+        write_only=True,
+        required=False
+    )
+    
+    class Meta:
+        model = Order
+        fields = [
+            'client_id','full_name', 'contact_number', 'email', 'description',
+            'special_requirements', 'diamond_size', 'gold_weight',
+            'preferred_delivery_date', 'address', 'files', 'gold_color'
+        ]
+    
+    def create(self, validated_data):
+        files_data = validated_data.pop('files', [])
+        client_id = validated_data.get('client_id')
+        user = self.context['request'].user
+        customer = CustomUser.objects.get(client_id=client_id)
+        # Set customer and client_id from authenticated user
+        validated_data['customer'] = customer
+        validated_data['client_id'] = customer.client_id
         order = Order.objects.create(**validated_data)
         
         for file_data in files_data:

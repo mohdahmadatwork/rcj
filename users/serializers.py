@@ -75,3 +75,50 @@ class UserProfileSerializer(serializers.ModelSerializer):
         model = User
         fields = ['username', 'email', 'first_name', 'last_name', 'phone', 'client_id']
         read_only_fields = ['username', 'client_id']
+
+class CustomerListSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(read_only=True)
+    full_name = serializers.SerializerMethodField()
+    username = serializers.CharField(read_only=True)
+    email = serializers.EmailField(read_only=True)
+    phone = serializers.CharField(read_only=True)
+    client_id = serializers.CharField(read_only=True)
+    date_joined = serializers.DateTimeField(read_only=True)
+    last_login = serializers.DateTimeField(read_only=True)
+    is_active = serializers.BooleanField(read_only=True)
+    orders_count = serializers.SerializerMethodField()
+    # total_order_value = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = [
+            'id', 'username', 'full_name', 'email', 'phone', 'client_id',
+            'date_joined', 'last_login', 'is_active', 'orders_count'
+        ]
+
+    def get_full_name(self, obj):
+        return f"{obj.first_name} {obj.last_name}".strip() or obj.username
+
+    def get_orders_count(self, obj):
+        # Assuming you have Order model with customer foreign key
+        if hasattr(obj, 'orders'):
+            return obj.orders.count()
+        return 0
+
+    # def get_total_order_value(self, obj):
+    #     # Calculate total order value for the customer
+    #     if hasattr(obj, 'orders'):
+    #         total = sum(order.final_price or order.estimated_price or 0 for order in obj.orders.all())
+    #         return float(total)
+    #     return 0.0
+
+
+class CustomerLookupSerializer(serializers.ModelSerializer):
+    full_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'full_name', 'client_id', 'email']
+
+    def get_full_name(self, obj):
+        return f"{obj.first_name} {obj.last_name}".strip() or obj.username
