@@ -62,7 +62,7 @@ class OrderFile(models.Model):
     caption = models.CharField(max_length=255, blank=True)
     stage = models.CharField(max_length=20, choices=STAGE_CHOICES, default='initial')
     uploaded_at = models.DateTimeField(auto_now_add=True)
-    
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='order_file_responses')
     def __str__(self):
         return f"{self.order.order_id} - {self.file.name}"
 

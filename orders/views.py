@@ -3,14 +3,15 @@ from rest_framework import generics, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.shortcuts import get_object_or_404
 from django.db.models import Count, Sum, Avg, Q
-from .models import Order, OrderLog, Contact
+from .models import Order, OrderLog, Contact, OrderFile
 from .serializers import (
     OrderCreateSerializer, OrderStatusSerializer, CustomerOrderListSerializer,
     OrderListSerializer, OrderUpdateSerializer, OrderLogSerializer, 
-    ContactSerializer, ContactResponseSerializer, AdminOrderListSerializer, ContactAdminSerializer
+    ContactSerializer, ContactResponseSerializer, AdminOrderListSerializer, 
+    ContactAdminSerializer, ContactAdminUpdateSerializer, OrderAdminStatusSerializer, OrderAdminUpdateSerializer
 )
 from rest_framework.pagination import PageNumberPagination
 from django.contrib.auth import get_user_model
@@ -126,6 +127,48 @@ class OrderDetailView(generics.RetrieveAPIView):
         if not is_admin_user(self.request.user):
             return Order.objects.none()
         return Order.objects.all()
+
+class OrderAdminDetailView(generics.RetrieveAPIView):
+    """Admin API for viewing order details"""
+    serializer_class = OrderAdminStatusSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_field = 'order_id'
+    queryset = Order.objects.all()
+    
+    def get_queryset(self):
+        if not is_admin_user(self.request.user):
+            return Order.objects.none()
+        return Order.objects.select_related().prefetch_related('files')
+    
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return Response({
+            'success': True,
+            'data': serializer.data  # Use 'data' to match mockOrder structure
+        }, status=status.HTTP_200_OK)
+
+
+# Alternative function-based approach
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def order_detail(request, order_id):
+    """Admin API for getting order details (function-based alternative)"""
+    
+    if not is_admin_user(request.user):
+        return Response({'error': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+    
+    try:
+        order = Order.objects.select_related().prefetch_related('files').get(order_id=order_id)
+    except Order.DoesNotExist:
+        return Response({'error': 'Order not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    serializer = OrderStatusSerializer(order)
+    
+    return Response({
+        'success': True,
+        'data': serializer.data
+    }, status=status.HTTP_200_OK)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -584,3 +627,121 @@ class AdminContactListView(generics.ListAPIView):
             qs = qs.filter(order_related=order_related.lower() == 'true')
 
         return qs
+
+
+class AdminContactUpdateView(generics.UpdateAPIView):
+    """Admin API for updating a contact inquiry"""
+    serializer_class = ContactAdminUpdateSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_field = 'id'
+    queryset = Contact.objects.all()
+
+    def get_object(self):
+        obj = get_object_or_404(Contact, id=self.kwargs.get('id'))
+        if not is_admin_user(self.request.user):
+            self.permission_denied(self.request, message="Admin access required")
+        return obj
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        # Set responded_at and responded_by if admin_response added
+        if 'admin_response' in serializer.validated_data and not instance.responded_at:
+            instance.responded_at = timezone.now()
+            instance.responded_by = request.user
+        self.perform_update(serializer)
+        # Return full serialized contact data
+        return Response({
+            'success': True,
+            'result': ContactAdminSerializer(instance).data
+        }, status=status.HTTP_200_OK)
+
+
+class OrderAdminUpdateView(generics.UpdateAPIView):
+    """Admin API for updating order details with file upload support"""
+    serializer_class = OrderAdminUpdateSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_field = 'order_id'
+    queryset = Order.objects.all()
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get_object(self):
+        obj = get_object_or_404(Order, order_id=self.kwargs.get('order_id'))
+        if not is_admin_user(self.request.user):
+            self.permission_denied(self.request, message="Admin access required")
+        return obj
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        
+        # Handle file uploads separately
+        uploaded_files = request.FILES.getlist('files')
+        file_captions = request.data.getlist('file_captions', [])  # Changed from file_comments
+        file_stages = request.data.getlist('file_stages', [])
+        
+        # Update order fields
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        
+        # Handle file uploads
+        if uploaded_files:
+            self.handle_file_uploads(instance, uploaded_files, file_captions, file_stages, request.user)
+        
+        # Return updated order with media
+        instance.refresh_from_db()
+        response_serializer = OrderStatusSerializer(instance)
+        return Response({
+            'success': True,
+            'message': 'Order updated successfully',
+            'data': response_serializer.data,
+            'files_uploaded': len(uploaded_files)
+        }, status=status.HTTP_200_OK)
+
+    def handle_file_uploads(self, order, files, captions, stages, user):
+        """Handle multiple file uploads"""
+        for i, file in enumerate(files):
+            # Validate file type
+            if not self.is_valid_file_type(file):
+                continue
+                
+            # Get caption and stage for this file
+            caption = captions[i] if i < len(captions) else ''
+            stage = stages[i] if i < len(stages) else order.order_status
+            
+            # Create OrderFile record using your model fields
+            OrderFile.objects.create(
+                order=order,
+                file=file,
+                caption=caption,  # Using caption instead of description
+                stage=stage,
+                uploaded_by=user,
+                file_type=self.get_file_type(file)
+            )
+
+    def is_valid_file_type(self, file):
+        """Validate file type and size"""
+        # Max file size: 10MB
+        max_size = 10 * 1024 * 1024
+        if file.size > max_size:
+            return False
+        
+        # Allowed extensions - matching your model choices
+        allowed_extensions = [
+            '.jpg', '.jpeg', '.png', '.gif', '.webp',  # Images
+            '.mp4', '.avi', '.mov', '.wmv', '.mkv',    # Videos
+        ]
+        
+        file_extension = '.' + file.name.split('.')[-1].lower()
+        return file_extension in allowed_extensions
+
+    def get_file_type(self, file):
+        """Determine file type - matching your model choices"""
+        file_extension = '.' + file.name.split('.')[-1].lower()
+        
+        if file_extension in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
+            return 'image'
+        elif file_extension in ['.mp4', '.avi', '.mov', '.wmv', '.mkv']:
+            return 'video'
+        return 'image'  # Default to image as per your model

@@ -69,6 +69,52 @@ class CustomerOrderListSerializer(serializers.ModelSerializer):
             'created_at', 'preferred_delivery_date', 'gold_color'
         ]
 
+
+class OrderAdminFileSerializer(serializers.ModelSerializer):
+    url = serializers.SerializerMethodField()
+    uploaded_by = serializers.SerializerMethodField()
+    stage = serializers.SerializerMethodField() 
+    type = serializers.SerializerMethodField()
+    filename = serializers.SerializerMethodField()
+    comment = serializers.CharField(source='description', read_only=True)
+
+    class Meta:
+        model = OrderFile
+        fields = ['id', 'filename', 'url', 'type', 'stage', 'comment', 'uploaded_at', 'uploaded_by']
+
+    def get_uploaded_by(self, obj):
+        # Return 'admin' or 'customer' based on who uploaded
+        return 'admin' if obj.uploaded_by and obj.uploaded_by.is_staff else 'customer'
+    
+    def get_stage(self, obj):
+        # Map stage based on order status or file stage
+        return getattr(obj, 'stage', 'initial')
+    
+    def get_type(self, obj):
+        # Determine file type from filename or mime type
+        if hasattr(obj, 'file') and obj.file:
+            filename = str(obj.file).lower()
+            if filename.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):
+                return 'image'
+            elif filename.endswith(('.mp4', '.avi', '.mov', '.wmv')):
+                return 'video'
+            elif filename.endswith(('.pdf', '.doc', '.docx')):
+                return 'document'
+        return 'image'  # default
+    
+    def get_filename(self, obj):
+        if hasattr(obj, 'file') and obj.file:
+            return obj.file.name.split('/')[-1]  # Get just the filename
+        return f"file-{obj.id}"
+
+    def get_url(self, obj):
+        if obj.file:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.file.url)
+            return obj.file.url
+        return None
+
 class OrderStatusSerializer(serializers.ModelSerializer):
     orderId = serializers.CharField(source='order_id', read_only=True)
     clientId = serializers.CharField(source='client_id', read_only=True)
@@ -123,6 +169,53 @@ class OrderStatusSerializer(serializers.ModelSerializer):
         }
         return stage_mapping.get(obj.order_status, 1)
 
+
+class OrderAdminStatusSerializer(serializers.ModelSerializer):
+    # Match mockOrder field names exactly
+    id = serializers.CharField(source='order_id', read_only=True)
+    order_number = serializers.CharField(source='order_id', read_only=True)
+    full_name = serializers.CharField(read_only=True)
+    contact_number = serializers.CharField(read_only=True)
+    email = serializers.EmailField(read_only=True)
+    description = serializers.CharField(read_only=True)
+    special_requirements = serializers.CharField(read_only=True)
+    diamond_size = serializers.CharField(read_only=True)
+    gold_weight = serializers.CharField(read_only=True)
+    gold_color = serializers.CharField(read_only=True)
+    preferred_delivery_date = serializers.DateField(read_only=True)
+    address = serializers.CharField(read_only=True)
+    status = serializers.CharField(source='order_status', read_only=True)
+    created_at = serializers.DateTimeField(read_only=True)
+    updated_at = serializers.DateTimeField(read_only=True)
+    estimated_price = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    final_price = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    notes = serializers.CharField(read_only=True)
+    media = OrderAdminFileSerializer(source='files', many=True, read_only=True)
+
+    class Meta:
+        model = Order
+        fields = [
+            'id',
+            'order_number',
+            'full_name',
+            'contact_number',
+            'email',
+            'description',
+            'special_requirements',
+            'diamond_size',
+            'gold_weight',
+            'gold_color',
+            'preferred_delivery_date',
+            'address',
+            'status',
+            'created_at',
+            'updated_at',
+            'estimated_price',
+            'final_price',
+            'notes',
+            'media',
+            'declined_reason'
+        ]
 # Admin serializers remain the same
 class OrderListSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source='customer.username', read_only=True)
@@ -235,7 +328,7 @@ class ContactAdminSerializer(serializers.ModelSerializer):
         ]
 
     def get_user_id(self, obj):
-        return str(obj.user.id) if obj.user else None
+        return str(obj.user.username) if obj.user else None
 
     def get_is_registered_user(self, obj):
         return obj.user is not None
@@ -275,3 +368,131 @@ class ContactAdminSerializer(serializers.ModelSerializer):
         return 'low'
     def get_source(self, obj):
         return 'website'
+
+class ContactAdminUpdateSerializer(serializers.ModelSerializer):
+    status = serializers.ChoiceField(choices=Contact.STATUS_CHOICES, required=False)
+    admin_response = serializers.CharField(required=False, allow_blank=True)
+
+    class Meta:
+        model = Contact
+        fields = ['admin_response', 'status']
+
+    def update(self, instance, validated_data):
+        user = self.context['request'].user
+        
+        # Only update fields that are present in validated_data
+        if 'admin_response' in validated_data:
+            instance.admin_response = validated_data['admin_response']
+            # Set responded_at and responded_by only when admin_response is provided and not already set
+            if validated_data['admin_response'] and not instance.responded_at:
+                instance.responded_at = timezone.now()
+                instance.responded_by = user
+        
+        if 'status' in validated_data:
+            instance.status = validated_data['status']
+        
+        instance.save()
+        return instance
+        
+    def validate(self, data):
+        # Ensure at least one field is being updated
+        if not data:
+            raise serializers.ValidationError("At least one field (admin_response or status) must be provided.")
+        return data
+
+
+class OrderAdminUpdateSerializer(serializers.ModelSerializer):
+    status = serializers.CharField(source='order_status', required=False)
+    estimated_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+    final_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+    notes = serializers.CharField(required=False, allow_blank=True)
+    special_requirements = serializers.CharField(required=False, allow_blank=True)
+    preferred_delivery_date = serializers.DateField(required=False)
+    diamond_size = serializers.CharField(required=False, allow_blank=True)
+    gold_weight = serializers.CharField(required=False, allow_blank=True)
+    gold_color = serializers.CharField(required=False, allow_blank=True)
+    description = serializers.CharField(required=False, allow_blank=True)
+    declined_reason = serializers.CharField(required=False, allow_blank=True)
+
+    class Meta:
+        model = Order
+        fields = [
+            'status',
+            'estimated_price', 
+            'final_price',
+            'notes',
+            'special_requirements',
+            'preferred_delivery_date',
+            'diamond_size',
+            'gold_weight',
+            'gold_color',
+            'description',
+            'declined_reason'
+        ]
+
+    def validate_status(self, value):
+        """Validate order status"""
+        valid_statuses = [
+            'new', 'confirmed', 'cad_done', 'rpt_done', 
+            'casting', 'ready', 'delivered', 'declined'
+        ]
+        if value not in valid_statuses:
+            raise serializers.ValidationError(f"Invalid status. Must be one of: {', '.join(valid_statuses)}")
+        return value
+
+    def validate_estimated_price(self, value):
+        """Validate estimated price is positive"""
+        if value and value < 0:
+            raise serializers.ValidationError("Estimated price must be positive")
+        return value
+
+    def validate_final_price(self, value):
+        """Validate final price is positive"""
+        if value and value < 0:
+            raise serializers.ValidationError("Final price must be positive")
+        return value
+
+    def update(self, instance, validated_data):
+        """Update only fields that are provided in the request"""
+        
+        # Handle status field mapping
+        if 'order_status' in validated_data:
+            instance.order_status = validated_data.pop('order_status')
+        
+        # Update other fields if provided
+        for field, value in validated_data.items():
+            if hasattr(instance, field):
+                setattr(instance, field, value)
+        
+        instance.save()
+        return instance
+
+    def validate(self, data):
+        """Ensure at least one field is being updated"""
+        if not data:
+            raise serializers.ValidationError("At least one field must be provided for update.")
+        return data
+
+class OrderAdminFileSerializer(serializers.ModelSerializer):
+    url = serializers.CharField(source='file.url', read_only=True)
+    uploaded_by = serializers.SerializerMethodField()
+    type = serializers.CharField(source='file_type', read_only=True)
+    uploaded_at = serializers.DateTimeField(read_only=True)
+    filename = serializers.SerializerMethodField()
+    comment = serializers.CharField(source='caption', read_only=True)
+    id = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = OrderFile
+        fields = ['id', 'filename', 'url', 'type', 'stage', 'comment', 'uploaded_at', 'uploaded_by']
+
+    def get_uploaded_by(self, obj):
+        # Return 'admin' or 'customer' based on who uploaded
+        if obj.uploaded_by:
+            return 'admin' if obj.uploaded_by.is_staff else 'customer'
+        return 'customer'  # Default for files without uploaded_by
+    
+    def get_filename(self, obj):
+        if obj.file:
+            return obj.file.name.split('/')[-1]  # Get just the filename
+        return f"file-{obj.id}"
