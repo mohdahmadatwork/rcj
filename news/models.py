@@ -174,6 +174,47 @@ class NewsItem(models.Model):
         
         return False
 
+    def get_primary_image(self):
+        """
+        Returns the primary uploaded NewsImage instance if exists.
+        """
+        return self.images.filter(is_primary=True).first()
+    def get_primary_image_url(self):
+        """
+        Return the uploaded primary image URL if available, otherwise fallback to image_url field.
+        This lets existing serializers keep using imageUrl/image_url without changing response shape.
+        """
+        primary = self.get_primary_image()
+        if primary and primary.image:
+            try:
+                return primary.image.url
+            except ValueError:
+                # storage/url not available
+                return None
+        return self.image_url
+    def get_all_image_urls(self):
+        """
+        Return all uploaded image URLs (useful if later exposing a gallery).
+        """
+        urls = []
+        for img in self.images.all():
+            if img.image:
+                try:
+                    urls.append(img.image.url)
+                except ValueError:
+                    continue
+        return urls
+    
+    def get_status(self):
+        from django.utils import timezone
+        if not self.published_at:
+            return 'draft'
+        if self.published_at > timezone.now():
+            return 'scheduled'
+        if self.expires_at and self.expires_at <= timezone.now():
+            return 'expired'
+        return 'published'
+
     @property
     def read_count(self):
         """Get the number of users who have read this news"""
@@ -196,8 +237,65 @@ class NewsReadTracker(models.Model):
 
     def __str__(self):
         return f"{self.user.username} read {self.news_item.title}"
+        
+def news_image_upload_to(instance, filename):
+        """
+        Upload path for news images: news_images/{news_item_id}/{filename}
+        """
+        return f"news_images/{instance.news_item_id}/{filename}"
 
+class NewsImage(models.Model):
+    """
+    Model to handle uploaded images for news items.
+    Many-to-one relation to NewsItem, with 'is_primary' to indicate the single UI image.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    news_item = models.ForeignKey(NewsItem, on_delete=models.CASCADE, related_name='images')
+    image = models.ImageField(upload_to=news_image_upload_to, null=True, blank=True)
+    alt_text = models.CharField(max_length=255, blank=True, help_text="Alternative text for accessibility")
+    is_primary = models.BooleanField(default=True, help_text="Primary image for the news item")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
 
-# After adding this to your models.py, run:
-# python manage.py makemigrations
-# python manage.py migrate
+    class Meta:
+        ordering = ['-uploaded_at']
+        indexes = [
+            models.Index(fields=['news_item', 'is_primary']),
+        ]
+
+    def __str__(self):
+        return f"Image for {self.news_item.title}"
+
+    @property
+    def image_url(self):
+        if self.image:
+            try:
+                return self.image.url
+            except ValueError:
+                return None
+        return None
+
+    def save(self, *args, **kwargs):
+        """
+        Ensure only one primary image per NewsItem.
+        If this instance is set as primary, demote others.
+        """
+        super_ret = super().save(*args, **kwargs)
+        if self.is_primary:
+            # Demote other primaries for the same news_item
+            NewsImage.objects.filter(news_item=self.news_item, is_primary=True).exclude(pk=self.pk).update(is_primary=False)
+        return super_ret
+
+    def delete(self, *args, **kwargs):
+        """
+        Delete the physical file when the model instance is deleted.
+        """
+        storage = getattr(self.image, 'storage', None)
+        name = getattr(self.image, 'name', None)
+        super().delete(*args, **kwargs)
+        if storage and name:
+            try:
+                storage.delete(name)
+            except Exception:
+                pass
+
+    

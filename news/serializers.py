@@ -1,44 +1,85 @@
 # news/serializers.py
+
+import os
+import uuid
 from rest_framework import serializers
+from django.utils import timezone
+from django.conf import settings
+from django.core.files.storage import default_storage
+from django.core.files.base import ContentFile
+
 from .models import NewsItem, NewsReadTracker
 from users.models import CustomUser
 
+
+
+
+def build_full_image_url(image_url, request=None):
+    """
+    Smart image URL handler:
+    - If URL starts with http:// or https://, return as-is (external URL)
+    - Otherwise, build full URL with base domain (uploaded file)
+    """
+    if not image_url:
+        return None
+        
+    # Check if it's already a full URL (external image)
+    if image_url.startswith(('http://', 'https://')):
+        return image_url
+    
+    # Build full URL for uploaded files or relative paths
+    if request:
+        if image_url.startswith('/'):
+            return request.build_absolute_uri(image_url)
+        
+        if not image_url.startswith('/'):
+            base_url = request.build_absolute_uri('/')[:-1]
+            return f"{base_url}/{image_url}"
+    
+    return image_url
+
+
 class NewsItemListSerializer(serializers.ModelSerializer):
+    """Serializer for news list view - public API"""
     isRead = serializers.SerializerMethodField()
     isPublic = serializers.BooleanField(source='is_public', read_only=True)
-    imageUrl = serializers.CharField(source='image_url', read_only=True)
+    imageUrl = serializers.SerializerMethodField()
     publishedAt = serializers.CharField(source='published_at', read_only=True)
     expiresAt = serializers.CharField(source='expires_at', read_only=True)
     actionButton = serializers.JSONField(source='action_button', read_only=True)
-    
+
     class Meta:
         model = NewsItem
         fields = [
-            'id','title','excerpt','category','priority','author',
-            'publishedAt','expiresAt','imageUrl','isPublic',
-            'target_user','isRead','tags','actionButton'
+            'id', 'title', 'excerpt', 'category', 'priority', 'author',
+            'publishedAt', 'expiresAt', 'imageUrl', 'isPublic',
+            'target_user', 'isRead', 'tags', 'actionButton'
         ]
-    
+
     def get_isRead(self, obj):
         user = self.context['request'].user
         if not user.is_authenticated:
             return False
         return obj.read_by.filter(id=user.id).exists()
+    def get_imageUrl(self, obj):
+        return build_full_image_url(obj.image_url, self.context.get('request'))
 
 
 
 class NewsItemDetailSerializer(serializers.ModelSerializer):
+    """Serializer for news detail view - public API"""
     is_read = serializers.SerializerMethodField()
     target_user_id = serializers.PrimaryKeyRelatedField(
         source='target_user', read_only=True
     )
+    image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = NewsItem
         fields = [
-            'id','title','content','excerpt','category','priority','author',
-            'published_at','expires_at','image_url','is_public','target_user_id',
-            'is_read','tags','action_button'
+            'id', 'title', 'content', 'excerpt', 'category', 'priority', 'author',
+            'published_at', 'expires_at', 'image_url', 'is_public', 'target_user_id',
+            'is_read', 'tags', 'action_button'
         ]
 
     def get_is_read(self, obj):
@@ -46,37 +87,34 @@ class NewsItemDetailSerializer(serializers.ModelSerializer):
         if not user.is_authenticated:
             return False
         return obj.read_by.filter(id=user.id).exists()
+    def get_image_url(self, obj):
+        return build_full_image_url(obj.image_url, self.context.get('request'))
 
-
-# Add this to serializers.py
-
-from rest_framework import serializers
-from django.utils import timezone
-from .models import NewsItem
 
 class NewsItemAdminSerializer(serializers.ModelSerializer):
+    """Serializer for admin news list view"""
     # Map fields to match frontend structure
     publishedAt = serializers.DateTimeField(source='published_at', allow_null=True)
     createdAt = serializers.DateTimeField(source='created_at')
     updatedAt = serializers.DateTimeField(source='updated_at')
     expiresAt = serializers.DateTimeField(source='expires_at', allow_null=True)
-    imageUrl = serializers.URLField(source='image_url', allow_null=True)
+    imageUrl = serializers.SerializerMethodField()
     isPublic = serializers.BooleanField(source='is_public')
-    
+
     # Target user information
     targetUserId = serializers.SerializerMethodField()
     targetUserEmail = serializers.SerializerMethodField()
-    
+
     # Author information
     authorId = serializers.SerializerMethodField()
-    
+
     # Status based on published_at
     status = serializers.SerializerMethodField()
-    
+
     # Read and click counts
     readCount = serializers.SerializerMethodField()
-    clickCount = serializers.SerializerMethodField()
-    
+    clickCount = serializers.IntegerField(source='click_count')
+
     # Action button as JSON
     actionButton = serializers.JSONField(source='action_button', allow_null=True)
 
@@ -84,7 +122,7 @@ class NewsItemAdminSerializer(serializers.ModelSerializer):
         model = NewsItem
         fields = [
             'id', 'title', 'content', 'excerpt', 'category', 'priority', 'status',
-            'author', 'authorId', 'publishedAt', 'createdAt', 'updatedAt', 
+            'author', 'authorId', 'publishedAt', 'createdAt', 'updatedAt',
             'expiresAt', 'imageUrl', 'isPublic', 'targetUserId', 'targetUserEmail',
             'tags', 'actionButton', 'readCount', 'clickCount'
         ]
@@ -105,20 +143,21 @@ class NewsItemAdminSerializer(serializers.ModelSerializer):
         if not obj.published_at:
             return 'draft'
         elif obj.published_at <= timezone.now():
+            # Check if expired
+            if obj.expires_at and obj.expires_at <= timezone.now():
+                return 'expired'
             return 'published'
         else:
             return 'scheduled'
 
     def get_readCount(self, obj):
         return obj.read_by.count()
-
-    def get_clickCount(self, obj):
-        # If you track click counts, implement here
-        # For now, return a placeholder or 0
-        return 0
+    def get_imageUrl(self, obj):
+        return build_full_image_url(obj.image_url, self.context.get('request'))
 
 
 class NewsItemCreateSerializerAdmin(serializers.ModelSerializer):
+    """Updated serializer for creating news items with file upload support"""
     # Optional fields for targeting
     target_user_id = serializers.IntegerField(required=False, allow_null=True)
     target_user_ids = serializers.ListField(
@@ -127,13 +166,16 @@ class NewsItemCreateSerializerAdmin(serializers.ModelSerializer):
         allow_empty=True
     )
     
+    # Change from URLField to ImageField for file upload
+    image = serializers.ImageField(required=False, allow_null=True, write_only=True)
+
     class Meta:
         model = NewsItem
         fields = [
             'title', 'content', 'excerpt', 'category', 'priority', 'author',
-            'published_at', 'expires_at', 'image_url', 'is_public',
+            'published_at', 'expires_at', 'image', 'is_public',  # Changed from 'image_url' to 'image'
             'target_type', 'target_user_id', 'target_user_ids',
-            'target_customer_type', 'target_order_status', 
+            'target_customer_type', 'target_order_status',
             'tags', 'action_button', 'related_order_id'
         ]
 
@@ -161,16 +203,13 @@ class NewsItemCreateSerializerAdmin(serializers.ModelSerializer):
         target_user_id = self.initial_data.get('target_user_id')
         target_user_ids = self.initial_data.get('target_user_ids')
         target_customer_type = self.initial_data.get('target_customer_type')
-        
+
         if value == 'specific_user' and not target_user_id:
             raise serializers.ValidationError("target_user_id required for specific_user targeting")
-        
         if value == 'user_group' and not target_user_ids:
             raise serializers.ValidationError("target_user_ids required for user_group targeting")
-        
         if value == 'customer_segment' and not target_customer_type:
             raise serializers.ValidationError("target_customer_type required for customer_segment targeting")
-        
         return value
 
     def validate_target_user_id(self, value):
@@ -189,66 +228,89 @@ class NewsItemCreateSerializerAdmin(serializers.ModelSerializer):
             if existing_users != len(value):
                 raise serializers.ValidationError("One or more target users do not exist")
         return value
+    
+    def _handle_image_upload(self, image_file):
+        """Handle image upload and return the URL"""
+        if not image_file:
+            return None
+            
+        # Generate unique filename
+        file_extension = os.path.splitext(image_file.name)[1]
+        unique_filename = f"news/{uuid.uuid4()}{file_extension}"
+        
+        # Save the file
+        file_path = default_storage.save(unique_filename, ContentFile(image_file.read()))
+        
+        # Return the full URL
+        if hasattr(settings, 'MEDIA_URL') and settings.MEDIA_URL:
+            return f"{settings.MEDIA_URL}{file_path}"
+        else:
+            # Fallback to relative path if MEDIA_URL not configured
+            return f"/media/{file_path}"
 
     def create(self, validated_data):
+        # Handle image upload
+        image_file = validated_data.pop('image', None)
+        if image_file:
+            validated_data['image_url'] = self._handle_image_upload(image_file)
+        
         # Handle target user assignments
         target_user_id = validated_data.pop('target_user_id', None)
         target_user_ids = validated_data.pop('target_user_ids', [])
-        
+
         # Set target_user if specific user targeting
         if target_user_id:
             validated_data['target_user'] = CustomUser.objects.get(id=target_user_id)
-        
+
         # Create the news item
         news_item = NewsItem.objects.create(**validated_data)
-        
+
         # Set target_users for group targeting
         if target_user_ids:
             target_users = CustomUser.objects.filter(id__in=target_user_ids)
             news_item.target_users.set(target_users)
-        
+
         return news_item
 
     def to_representation(self, instance):
         """Return the created news item in admin list format"""
-        from .serializers import NewsItemAdminSerializer
         return NewsItemAdminSerializer(instance).data
 
 
-
-class NewsItemDetailSerializer(serializers.ModelSerializer):
+class NewsItemAdminDetailSerializer(serializers.ModelSerializer):
+    """Extended serializer for admin news detail view with comprehensive information"""
     # Map fields to match frontend structure
     publishedAt = serializers.DateTimeField(source='published_at', allow_null=True)
     createdAt = serializers.DateTimeField(source='created_at')
     updatedAt = serializers.DateTimeField(source='updated_at')
     expiresAt = serializers.DateTimeField(source='expires_at', allow_null=True)
-    imageUrl = serializers.URLField(source='image_url', allow_null=True)
+    imageUrl = serializers.SerializerMethodField()
     isPublic = serializers.BooleanField(source='is_public')
-    
+
     # Target user information
     targetUserId = serializers.SerializerMethodField()
     targetUserEmail = serializers.SerializerMethodField()
     targetUserName = serializers.SerializerMethodField()
-    
+
     # Target users for group targeting
     targetUsers = serializers.SerializerMethodField()
-    
+
     # Author information
     authorId = serializers.SerializerMethodField()
-    
+
     # Status based on published_at
     status = serializers.SerializerMethodField()
-    
+
     # Read and engagement statistics
     readCount = serializers.SerializerMethodField()
     clickCount = serializers.IntegerField(source='click_count')
-    
+
     # Action button as JSON
     actionButton = serializers.JSONField(source='action_button', allow_null=True)
-    
+
     # Recent readers list
     recentReaders = serializers.SerializerMethodField()
-    
+
     # Targeting information
     targetType = serializers.CharField(source='target_type')
     targetCustomerType = serializers.CharField(source='target_customer_type', allow_null=True)
@@ -260,9 +322,9 @@ class NewsItemDetailSerializer(serializers.ModelSerializer):
         model = NewsItem
         fields = [
             'id', 'title', 'content', 'excerpt', 'category', 'priority', 'status',
-            'author', 'authorId', 'publishedAt', 'createdAt', 'updatedAt', 
+            'author', 'authorId', 'publishedAt', 'createdAt', 'updatedAt',
             'expiresAt', 'imageUrl', 'isPublic', 'targetUserId', 'targetUserEmail',
-            'targetUserName', 'targetUsers', 'tags', 'actionButton', 'readCount', 
+            'targetUserName', 'targetUsers', 'tags', 'actionButton', 'readCount',
             'clickCount', 'recentReaders', 'targetType', 'targetCustomerType',
             'targetOrderStatus', 'relatedOrderId', 'autoGenerated'
         ]
@@ -330,10 +392,13 @@ class NewsItemDetailSerializer(serializers.ModelSerializer):
             }
             for read in recent_reads
         ]
+    def get_imageUrl(self, obj):
+        return build_full_image_url(obj.image_url, self.context.get('request'))
 
 
 
 class NewsItemUpdateSerializer(serializers.ModelSerializer):
+    """Serializer for updating news items"""
     # Optional fields for targeting
     target_user_id = serializers.IntegerField(required=False, allow_null=True)
     target_user_ids = serializers.ListField(
@@ -342,13 +407,17 @@ class NewsItemUpdateSerializer(serializers.ModelSerializer):
         allow_empty=True
     )
     
+    # Support both image file upload and URL
+    image = serializers.ImageField(required=False, allow_null=True, write_only=True)
+    image_url = serializers.URLField(required=False, allow_null=True)
+
     class Meta:
         model = NewsItem
         fields = [
             'title', 'content', 'excerpt', 'category', 'priority', 'author',
-            'published_at', 'expires_at', 'image_url', 'is_public',
+            'published_at', 'expires_at', 'image', 'image_url', 'is_public',
             'target_type', 'target_user_id', 'target_user_ids',
-            'target_customer_type', 'target_order_status', 
+            'target_customer_type', 'target_order_status',
             'tags', 'action_button', 'related_order_id'
         ]
 
@@ -376,16 +445,13 @@ class NewsItemUpdateSerializer(serializers.ModelSerializer):
         target_user_id = self.initial_data.get('target_user_id')
         target_user_ids = self.initial_data.get('target_user_ids')
         target_customer_type = self.initial_data.get('target_customer_type')
-        
+
         if value == 'specific_user' and not target_user_id:
             raise serializers.ValidationError("target_user_id required for specific_user targeting")
-        
         if value == 'user_group' and not target_user_ids:
             raise serializers.ValidationError("target_user_ids required for user_group targeting")
-        
         if value == 'customer_segment' and not target_customer_type:
             raise serializers.ValidationError("target_customer_type required for customer_segment targeting")
-        
         return value
 
     def validate_target_user_id(self, value):
@@ -405,23 +471,58 @@ class NewsItemUpdateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError("One or more target users do not exist")
         return value
 
+    def validate(self, data):
+        """Cross-field validation"""
+        image = data.get('image')
+        image_url = data.get('image_url')
+        
+        # Don't allow both image file and URL
+        if image and image_url:
+            raise serializers.ValidationError("Cannot provide both image file and image URL")
+        
+        return data
+    
+    def _handle_image_upload(self, image_file):
+        """Handle image upload and return the URL"""
+        if not image_file:
+            return None
+            
+        # Generate unique filename
+        file_extension = os.path.splitext(image_file.name)[1]
+        unique_filename = f"news/{uuid.uuid4()}{file_extension}"
+        
+        # Save the file
+        file_path = default_storage.save(unique_filename, ContentFile(image_file.read()))
+        
+        # Return the full URL
+        if hasattr(settings, 'MEDIA_URL') and settings.MEDIA_URL:
+            return f"{settings.MEDIA_URL}{file_path}"
+        else:
+            return f"/media/{file_path}"
+
     def update(self, instance, validated_data):
+        # Handle image upload if provided
+        image_file = validated_data.pop('image', None)
+        if image_file:
+            # Remove existing image_url if provided in data
+            validated_data.pop('image_url', None)
+            validated_data['image_url'] = self._handle_image_upload(image_file)
+        
         # Handle target user assignments
         target_user_id = validated_data.pop('target_user_id', None)
         target_user_ids = validated_data.pop('target_user_ids', [])
-        
+
         # Clear existing target_user if not specific_user targeting
         if validated_data.get('target_type') != 'specific_user':
             validated_data['target_user'] = None
         elif target_user_id:
             validated_data['target_user'] = CustomUser.objects.get(id=target_user_id)
-        
+
         # Update all fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
-        
         instance.save()
-        
+
         # Handle target_users for group targeting
         if validated_data.get('target_type') == 'user_group' and target_user_ids:
             target_users = CustomUser.objects.filter(id__in=target_user_ids)
@@ -429,10 +530,16 @@ class NewsItemUpdateSerializer(serializers.ModelSerializer):
         else:
             # Clear target_users if not group targeting
             instance.target_users.clear()
-        
+
         return instance
 
     def to_representation(self, instance):
         """Return the updated news item in admin detail format"""
-        from .serializers import NewsItemDetailSerializer
-        return NewsItemDetailSerializer(instance).data
+        return NewsItemAdminDetailSerializer(instance).data
+
+
+# Legacy alias for backward compatibility
+NewsItemDetailSerializer = NewsItemAdminDetailSerializer
+
+
+# news/utils.py
