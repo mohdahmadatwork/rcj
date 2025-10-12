@@ -5,6 +5,7 @@ from django.db import transaction
 from .models import Order
 from .tasks import send_order_completion_email, send_order_status_update_email
 import logging
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,8 @@ def send_order_notification_email(sender, instance, created, **kwargs):
     """
     Send email notifications when order status changes
     """
+    if not settings.ENABLE_BACKGROUND_TASKS:
+        return
     if created:
         # Don't send email when order is first created
         return
@@ -39,7 +42,8 @@ def send_order_notification_email(sender, instance, created, **kwargs):
 
 def handle_status_change_email(instance, old_status, new_status):
     """Handle email sending based on status change"""
-    
+    if not settings.ENABLE_BACKGROUND_TASKS:
+        return
     # Send completion email when order is ready or delivered
     if new_status in ['ready', 'delivered']:
         send_order_completion_email.delay(
