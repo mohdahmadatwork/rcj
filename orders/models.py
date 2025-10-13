@@ -13,6 +13,7 @@ class Order(models.Model):
         ('new', 'New'),
         ('confirmed', 'Confirmed'),
         ('cad_done', 'CAD Done'),
+        ('user_confirmed', 'User Approved'),
         ('rpt_done', 'RPT Done'),
         ('casting', 'Casting'),
         ('ready', 'Ready'),
@@ -33,6 +34,8 @@ class Order(models.Model):
     preferred_delivery_date = models.DateField()
     order_status = models.CharField(max_length=20, choices=ORDER_STATUS_CHOICES, default='new')
     declined_reason = models.TextField(blank=True, null=True)
+    declined_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='declined_orders')
+    declined_at = models.DateTimeField(auto_now=True, null=True, blank=True) 
     estimated_value = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     address = models.TextField(default='',null=True,blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -77,7 +80,48 @@ class OrderLog(models.Model):
         return f"{self.order.order_id} - {self.action} by {self.user}"
 
 
+class Message(models.Model):
+    SENDER_TYPE_CHOICES = [
+        ('user', 'User'),
+        ('admin', 'Admin'),
+        ('system', 'System'),
+    ]
 
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    sender_type = models.CharField(max_length=10, choices=SENDER_TYPE_CHOICES)
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_messages')
+    
+    # Optional order relationship
+    order = models.ForeignKey('Order', on_delete=models.CASCADE, null=True, blank=True, related_name='messages')
+    
+    # Message content
+    text = models.TextField()
+    
+    # Metadata
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    # For system messages
+    is_system_message = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def save(self, *args, **kwargs):
+        # Auto-set sender_type based on user role
+        if not self.sender_type:
+            if self.is_system_message:
+                self.sender_type = 'system'
+            elif self.sender.is_staff or self.sender.is_superuser:
+                self.sender_type = 'admin'
+            else:
+                self.sender_type = 'user'
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        order_info = f" (Order: {self.order.order_id})" if self.order else ""
+        return f"{self.sender_type.title()} message{order_info} - {self.text[:50]}..."
 
 
 class Contact(models.Model):

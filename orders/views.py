@@ -6,13 +6,14 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.shortcuts import get_object_or_404
 from django.db.models import Count, Sum, Avg, Q
-from .models import Order, OrderLog, Contact, OrderFile
+from .models import Order, OrderLog, Contact, OrderFile, Message
 from .serializers import (
     OrderCreateSerializer, OrderStatusSerializer, CustomerOrderListSerializer,
     OrderListSerializer, OrderUpdateSerializer, OrderLogSerializer, 
     ContactSerializer, ContactResponseSerializer, AdminOrderListSerializer, 
     ContactAdminSerializer, ContactAdminUpdateSerializer, OrderAdminStatusSerializer, 
-    OrderAdminUpdateSerializer, OrderAdminCreateSerializer
+    OrderAdminUpdateSerializer, OrderAdminCreateSerializer, CustomerOrderUpdateSerializer, 
+    MessageListSerializer, MessageCreateSerializer
 )
 from rest_framework.pagination import PageNumberPagination
 from django.contrib.auth import get_user_model
@@ -83,6 +84,97 @@ def check_order_status(request):
             {'error': 'Order not found'},
             status=status.HTTP_404_NOT_FOUND
         )
+
+
+class CustomerOrderUpdateView(generics.UpdateAPIView):
+    """
+    API for customers to approve or decline their orders
+    Only allows updating status to 'user_confirmed' or 'declined'
+    """
+    serializer_class = CustomerOrderUpdateSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_field = 'order_id'
+
+    def get_queryset(self):
+        """
+        Only allow customers to update their own orders
+        """
+        return Order.objects.filter(customer=self.request.user)
+
+    def get_object(self):
+        """
+        Get the order and ensure it belongs to the current user
+        """
+        order_id = self.kwargs.get('order_id')
+        order = get_object_or_404(
+            Order,
+            order_id=order_id,
+            customer=self.request.user
+        )
+        return order
+
+    def perform_update(self, serializer):
+        """
+        Custom update logic to handle declined_by field and timestamps
+        """
+        order_status = serializer.validated_data.get('order_status')
+        
+        # Set declined_by and declined_at if order is being declined
+        if order_status == 'declined':
+            serializer.save(
+                declined_by=self.request.user,
+                declined_at=timezone.now()
+            )
+        else:
+            # Clear declined fields if order is approved
+            serializer.save(
+                declined_by=None,
+                declined_at=None,
+                declined_reason=''
+            )
+
+    def update(self, request, *args, **kwargs):
+        """
+        Custom update method with detailed response
+        """
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        
+        if serializer.is_valid():
+            old_status = instance.order_status
+            self.perform_update(serializer)
+            new_status = serializer.validated_data.get('order_status')
+            
+            # Create response based on action
+            if new_status == 'user_confirmed':
+                message = f"Order {instance.order_id} has been approved successfully."
+                action = "approved"
+            else:  # declined
+                message = f"Order {instance.order_id} has been declined."
+                action = "declined"
+
+            return Response({
+                'success': True,
+                'message': message,
+                'action': action,
+                'order_id': instance.order_id,
+                'previous_status': old_status,
+                'current_status': new_status,
+                'updated_at': instance.updated_at.isoformat()
+            }, status=status.HTTP_200_OK)
+        
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    def patch(self, request, *args, **kwargs):
+        """
+        Handle PATCH requests (partial updates)
+        """
+        kwargs['partial'] = True
+        return self.update(request, *args, **kwargs)
 
 class OrderListView(generics.ListAPIView):
     """Admin API for listing all orders"""
@@ -746,3 +838,92 @@ class OrderAdminUpdateView(generics.UpdateAPIView):
         elif file_extension in ['.mp4', '.avi', '.mov', '.wmv', '.mkv']:
             return 'video'
         return 'image'  # Default to image as per your model
+    
+class MessageListView(generics.ListAPIView):
+    """
+    Get messages for authenticated user
+    - Users see their own messages and system messages for their orders
+    - Admins see all messages
+    """
+    serializer_class = MessageListSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        order_id = self.request.query_params.get('order_id')
+
+        if user.is_staff:
+            # Admin can see all messages
+            queryset = Message.objects.all()
+        else:
+            # Users see only their messages and system messages for their orders
+            queryset = Message.objects.filter(
+                Q(sender=user) |  # Messages sent by user
+                Q(order__customer=user, sender_type='admin') |  # Admin messages on user's orders
+                Q(order__customer=user, sender_type='system')   # System messages on user's orders
+            )
+
+        # Filter by order if specified
+        if order_id:
+            queryset = queryset.filter(order__order_id=order_id)
+
+        return queryset.order_by('created_at')
+
+class MessageCreateView(generics.CreateAPIView):
+    """
+    Create a new message
+    """
+    serializer_class = MessageCreateSerializer
+    permission_classes = [IsAuthenticated]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            message = serializer.save()
+            
+            # Return response in expected format
+            response_data = {
+                'id': str(message.id),
+                'sender_type': message.sender_type,
+                'sender': str(message.sender),
+                'text': message.text,
+                'timestamp': message.created_at.isoformat(),
+                'is_read': message.is_read
+            }
+            
+            if message.order:
+                response_data['order_id'] = message.order.order_id
+
+            return Response({
+                'success': True,
+                'message': 'Message sent successfully',
+                'data': response_data
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+class OrderMessagesView(generics.ListAPIView):
+    """
+    Get all messages for a specific order
+    """
+    serializer_class = MessageListSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        order_id = self.kwargs.get('order_id')
+        user = self.request.user
+
+        try:
+            order = Order.objects.get(order_id=order_id)
+            
+            # Check access permissions
+            if not user.is_staff and order.customer != user:
+                return Message.objects.none()
+            
+            return Message.objects.filter(order=order).order_by('created_at')
+        
+        except Order.DoesNotExist:
+            return Message.objects.none()

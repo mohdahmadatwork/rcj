@@ -60,6 +60,68 @@ class OrderCreateSerializer(serializers.ModelSerializer):
             )
         
         return order
+
+class CustomerOrderUpdateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for customers to approve or decline their orders
+    Only allows updating status to 'user_confirmed' or 'declined'
+    """
+    order_status = serializers.ChoiceField(
+        choices=[
+            ('user_confirmed', 'User Approved'),
+            ('declined', 'Declined')
+        ],
+        required=True
+    )
+    declined_reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=1000,
+        help_text="Required when declining an order"
+    )
+
+    class Meta:
+        model = Order
+        fields = ['order_status', 'declined_reason']
+
+    def validate(self, data):
+        """
+        Validate that declined_reason is provided when status is declined
+        """
+        order_status = data.get('order_status')
+        declined_reason = data.get('declined_reason', '').strip()
+
+        if order_status == 'declined' and not declined_reason:
+            raise serializers.ValidationError({
+                'declined_reason': 'Declined reason is required when declining an order.'
+            })
+
+        # Clear declined_reason if status is user_confirmed
+        if order_status == 'user_confirmed':
+            data['declined_reason'] = ''
+
+        return data
+
+    def validate_order_status(self, value):
+        """
+        Additional validation for order status
+        """
+        # Get the current order instance
+        instance = self.instance
+        if instance:
+            current_status = instance.order_status
+            
+            # Only allow updates from specific statuses
+            allowed_from_statuses = ['cad_done', 'new', 'confirmed']
+            
+            if current_status not in allowed_from_statuses:
+                raise serializers.ValidationError(
+                    f"Cannot update order status from '{current_status}'. "
+                    f"Order must be in one of these statuses: {', '.join(allowed_from_statuses)}"
+                )
+
+        return value
+
 class OrderAdminCreateSerializer(serializers.ModelSerializer):
     files = serializers.ListField(
         child=serializers.FileField(),
@@ -198,10 +260,11 @@ class OrderStatusSerializer(serializers.ModelSerializer):
             'new': 1,
             'confirmed': 2,
             'cad_done': 3,
-            'rpt_done': 4,
-            'casting': 5,
-            'ready': 6,
-            'delivered': 7,
+            'user_confirmed':4,
+            'rpt_done': 5,
+            'casting': 6,
+            'ready': 7,
+            'delivered': 8,
         }
         return stage_mapping.get(obj.order_status, 1)
 
@@ -469,7 +532,7 @@ class OrderAdminUpdateSerializer(serializers.ModelSerializer):
     def validate_status(self, value):
         """Validate order status"""
         valid_statuses = [
-            'new', 'confirmed', 'cad_done', 'rpt_done', 
+            'new', 'confirmed', 'cad_done', 'user_confirmed' ,'rpt_done', 
             'casting', 'ready', 'delivered', 'declined'
         ]
         if value not in valid_statuses:
@@ -532,3 +595,60 @@ class OrderAdminFileSerializer(serializers.ModelSerializer):
         if obj.file:
             return obj.file.name.split('/')[-1]  # Get just the filename
         return f"file-{obj.id}"
+    
+
+
+
+# orders/serializers.py (add these to your existing serializers)
+from rest_framework import serializers
+from .models import Message, Order
+
+class MessageSerializer(serializers.ModelSerializer):
+    id = serializers.CharField(read_only=True)
+    sender = serializers.StringRelatedField(read_only=True)
+    timestamp = serializers.DateTimeField(source='created_at', read_only=True)
+
+    class Meta:
+        model = Message
+        fields = ['id', 'sender_type', 'sender', 'text', 'timestamp', 'is_read']
+        read_only_fields = ['sender_type', 'sender', 'timestamp', 'is_read']
+
+class MessageCreateSerializer(serializers.ModelSerializer):
+    order_id = serializers.CharField(required=False, allow_blank=True)
+
+    class Meta:
+        model = Message
+        fields = ['text', 'order_id']
+
+    def validate_order_id(self, value):
+        if value:
+            try:
+                order = Order.objects.get(order_id=value)
+                # Check if user has access to this order
+                user = self.context['request'].user
+                if not user.is_staff and order.customer != user:
+                    raise serializers.ValidationError("You don't have access to this order.")
+                return order
+            except Order.DoesNotExist:
+                raise serializers.ValidationError("Order not found.")
+        return None
+
+    def create(self, validated_data):
+        order = validated_data.pop('order_id', None)
+        message = Message.objects.create(
+            sender=self.context['request'].user,
+            order=order,
+            **validated_data
+        )
+        return message
+
+class MessageListSerializer(serializers.ModelSerializer):
+    id = serializers.CharField(read_only=True)
+    timestamp = serializers.DateTimeField(source='created_at', read_only=True)
+    order_id = serializers.CharField(source='order.order_id', read_only=True)
+    #  = serializers.StringRelatedField(read_only=True)
+    sender = serializers.CharField(source='sender_type', required=False)
+
+    class Meta:
+        model = Message
+        fields = ['id', 'sender', 'text', 'timestamp', 'is_read', 'order_id']

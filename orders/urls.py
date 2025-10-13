@@ -5,11 +5,14 @@ from . import views
 urlpatterns = [
     # Customer APIs (require authentication)
     path('order/', views.OrderCreateView.as_view(), name='order-create'),
+    path('order/<str:order_id>/update-status/',views.CustomerOrderUpdateView.as_view(), name='customer-order-update'),
     path('order/status/', views.check_order_status, name='order-status'),
     path('my-orders/', views.CustomerOrderListView.as_view(), name='my-orders'),
     path('contact/', views.contact_us, name='contact-us'),
     path('my-contacts/', views.my_contact_requests, name='my-contact-requests'),
-    
+    path('messages/', views.MessageListView.as_view(), name='message-list'),
+    path('messages/create/', views.MessageCreateView.as_view(), name='message-create'),
+    path('order/<str:order_id>/messages/', views.OrderMessagesView.as_view(), name='order-messages'),
     # Admin APIs
     path('admin/dashboard-stats/', views.admin_dashboard_stats, name='admin-dashboard-stats'),
     path('admin/orders/', views.OrderListView.as_view(), name='admin-order-list'),
