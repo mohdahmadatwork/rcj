@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'orders',
     'users',
     'news',
+    'analytics',
     # Django AllAuth
     'django.contrib.sites',
     'allauth',

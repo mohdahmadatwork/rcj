@@ -10,6 +10,7 @@ urlpatterns = [
     path('api/news/', include('news.urls')),
     path('api/auth/', include('users.urls')),
     path('accounts/', include('allauth.urls')),  # Add allauth URLs
+    path('api/analytics/', include('analytics.urls')),
 ]
 
 if settings.DEBUG:
