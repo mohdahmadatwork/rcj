@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 import uuid
 from datetime import datetime
 from django.contrib.auth import get_user_model
-
+from auditlog.registry import auditlog
 User = get_user_model()
 
 class Order(models.Model):
@@ -201,3 +201,7 @@ class Contact(models.Model):
 
     def __str__(self):
         return f'{self.ticket_number} - {self.subject}'
+
+
+auditlog.register(Order)
+auditlog.register(OrderFile)
