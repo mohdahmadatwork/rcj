@@ -160,10 +160,10 @@ class FullAdminAnalyticsAPIView(APIView):
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAdminUser
+from rest_framework.permissions import IsAuthenticated
 from django.db.models import Count, Avg, F, ExpressionWrapper, DurationField
 from django.utils import timezone
-from datetime import timedelta
+from datetime import timedelta, datetime
 from orders.models import Order
 from auditlog.models import LogEntry
 from django.contrib.contenttypes.models import ContentType
@@ -174,53 +174,83 @@ class OrderStatusDistributionAPIView(APIView):
     GET /api/admin/analytics/order-status-distribution
     
     Returns order status distribution with counts and percentages
+    
+    Query Parameters:
+    - start_date: Filter orders created after this date (format: YYYY-MM-DD)
+    - end_date: Filter orders created before this date (format: YYYY-MM-DD)
     """
     permission_classes = [IsAuthenticated]
+    
     def get(self, request):
+        # Get date filters from query parameters
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        
+        # Build base queryset
+        queryset = Order.objects.all()
+        
+        # Apply date filters if provided
+        if start_date:
+            try:
+                start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+                queryset = queryset.filter(created_at__gte=start_date_obj)
+            except ValueError:
+                return Response({
+                    'error': 'Invalid start_date format. Use YYYY-MM-DD'
+                }, status=400)
+        
+        if end_date:
+            try:
+                end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+                # Add one day to include the entire end_date
+                end_date_obj = datetime.combine(end_date_obj, datetime.max.time())
+                queryset = queryset.filter(created_at__lte=end_date_obj)
+            except ValueError:
+                return Response({
+                    'error': 'Invalid end_date format. Use YYYY-MM-DD'
+                }, status=400)
+        
         # Define status groupings
         in_progress_statuses = ['confirmed', 'cad_done', 'user_confirmed', 'rpt_done', 'casting', 'ready']
         
         # Get total orders count
-        total_orders = Order.objects.count()
-        
-        if total_orders == 0:
-            return Response({
-                'status_distribution': [],
-                'total_orders': 0
-            })
+        total_orders = queryset.count()
         
         # Count orders by grouped statuses
-        delivered_count = Order.objects.filter(order_status='delivered').count()
-        in_progress_count = Order.objects.filter(order_status__in=in_progress_statuses).count()
-        new_count = Order.objects.filter(order_status='new').count()
-        declined_count = Order.objects.filter(order_status='declined').count()
-        cad_done = Order.objects.filter(order_status='cad_done').count()
-        declined = Order.objects.filter(order_status='declined').count()
+        delivered_count = queryset.filter(order_status='delivered').count()
+        in_progress_count = queryset.filter(order_status__in=in_progress_statuses).count()
+        new_count = queryset.filter(order_status='new').count()
+        declined_count = queryset.filter(order_status='declined').count()
+        cad_done = queryset.filter(order_status='cad_done').count()
         
-        # Calculate percentages
+        # Calculate percentages (handle division by zero)
+        def calculate_percentage(count, total):
+            return round((count / total) * 100, 1) if total > 0 else 0.0
+        
+        # Always return data structure even if no orders
         data = [
             {
                 'status': 'Delivered',
                 'count': delivered_count,
-                'percentage': round((delivered_count / total_orders) * 100, 1),
+                'percentage': calculate_percentage(delivered_count, total_orders),
                 'color': 'bg-blue-500'
             },
             {
                 'status': 'In Progress',
                 'count': in_progress_count,
-                'percentage': round((in_progress_count / total_orders) * 100, 1),
+                'percentage': calculate_percentage(in_progress_count, total_orders),
                 'color': 'bg-yellow-500'
             },
             {
                 'status': 'New',
                 'count': new_count,
-                'percentage': round((new_count / total_orders) * 100, 1),
+                'percentage': calculate_percentage(new_count, total_orders),
                 'color': 'bg-purple-500'
             },
             {
                 'status': 'Declined',
                 'count': declined_count,
-                'percentage': round((declined_count / total_orders) * 100, 1),
+                'percentage': calculate_percentage(declined_count, total_orders),
                 'color': 'bg-red-500'
             }
         ]
@@ -229,7 +259,11 @@ class OrderStatusDistributionAPIView(APIView):
             'status_distribution': data,
             'total_orders': total_orders,
             'cad_done': cad_done,
-            'declined': declined
+            'declined': declined_count,
+            'filters': {
+                'start_date': start_date,
+                'end_date': end_date
+            }
         })
 
 
@@ -238,11 +272,35 @@ class StagePerformanceAPIView(APIView):
     GET /api/admin/analytics/stage-performance
     
     Returns average time spent in each order stage using AuditLog
+    
+    Query Parameters:
+    - start_date: Filter orders created after this date (format: YYYY-MM-DD)
+    - end_date: Filter orders created before this date (format: YYYY-MM-DD)
     """
     permission_classes = [IsAuthenticated]
     
-    
     def get(self, request):
+        # Get date filters from query parameters
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        
+        # Validate date formats
+        if start_date:
+            try:
+                datetime.strptime(start_date, '%Y-%m-%d')
+            except ValueError:
+                return Response({
+                    'error': 'Invalid start_date format. Use YYYY-MM-DD'
+                }, status=400)
+        
+        if end_date:
+            try:
+                datetime.strptime(end_date, '%Y-%m-%d')
+            except ValueError:
+                return Response({
+                    'error': 'Invalid end_date format. Use YYYY-MM-DD'
+                }, status=400)
+        
         stage_performance = []
         
         # Define stage transitions
@@ -258,7 +316,9 @@ class StagePerformanceAPIView(APIView):
         for transition in stage_transitions:
             avg_time = self._calculate_stage_time_from_auditlog(
                 transition['from'], 
-                transition['to']
+                transition['to'],
+                start_date,
+                end_date
             )
             
             stage_performance.append({
@@ -271,10 +331,14 @@ class StagePerformanceAPIView(APIView):
         
         return Response({
             'stage_performance': stage_performance,
-            'total_stages': len(stage_performance)
+            'total_stages': len(stage_performance),
+            'filters': {
+                'start_date': start_date,
+                'end_date': end_date
+            }
         })
     
-    def _calculate_stage_time_from_auditlog(self, from_status, to_status):
+    def _calculate_stage_time_from_auditlog(self, from_status, to_status, start_date=None, end_date=None):
         """
         Calculate average time between two statuses using AuditLog
         
@@ -284,10 +348,23 @@ class StagePerformanceAPIView(APIView):
         # Get Order content type for auditlog filtering
         order_content_type = ContentType.objects.get_for_model(Order)
         
+        # Build base queryset for orders
+        orders_queryset = Order.objects.all()
+        
+        # Apply date filters if provided
+        if start_date:
+            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+            orders_queryset = orders_queryset.filter(created_at__gte=start_date_obj)
+        
+        if end_date:
+            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+            end_date_obj = datetime.combine(end_date_obj, datetime.max.time())
+            orders_queryset = orders_queryset.filter(created_at__lte=end_date_obj)
+        
         # Get all orders that have reached the 'to' status
-        orders_with_target_status = Order.objects.filter(
+        orders_with_target_status = orders_queryset.filter(
             order_status=to_status
-        ) | Order.objects.filter(
+        ) | orders_queryset.filter(
             # Also include orders that have moved past this status
             order_status__in=self._get_statuses_after(to_status)
         )
@@ -368,6 +445,10 @@ class CombinedOrderAnalyticsAPIView(APIView):
     GET /api/admin/analytics/order-analytics
     
     Returns both order status distribution and stage performance in one call
+    
+    Query Parameters:
+    - start_date: Filter orders created after this date (format: YYYY-MM-DD)
+    - end_date: Filter orders created before this date (format: YYYY-MM-DD)
     """
     permission_classes = [IsAuthenticated]
     
@@ -376,17 +457,26 @@ class CombinedOrderAnalyticsAPIView(APIView):
         status_view = OrderStatusDistributionAPIView()
         status_response = status_view.get(request)
         
+        # Check if there was an error in status_view
+        if status_response.status_code != 200:
+            return status_response
+        
         # Get stage performance
         stage_view = StagePerformanceAPIView()
         stage_response = stage_view.get(request)
+        
+        # Check if there was an error in stage_view
+        if stage_response.status_code != 200:
+            return stage_response
         
         return Response({
             'order_status_data': status_response.data['status_distribution'],
             'stage_performance': stage_response.data['stage_performance'],
             'total_orders': status_response.data['total_orders'],
             'total_stages': stage_response.data['total_stages'],
-            'cad_done' :  status_response.data['cad_done'],
-            'declined' :  status_response.data['declined']
+            'cad_done': status_response.data['cad_done'],
+            'declined': status_response.data['declined'],
+            'filters': status_response.data['filters']
         })
 
 # analytics/views.py - TIME TRENDS ANALYTICS API
@@ -766,12 +856,14 @@ class MonthlyGrowthAPIView(APIView):
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAdminUser
+from rest_framework.permissions import IsAuthenticated
 from django.db.models import Count
 from django.db.models.functions import TruncDate, TruncMonth
 from django.utils import timezone
 from datetime import datetime, timedelta
 from orders.models import Order
+
+
 class DailyOrderVolumeAPIView(APIView):
     """
     GET /api/admin/analytics/daily-order-volume
@@ -794,13 +886,18 @@ class DailyOrderVolumeAPIView(APIView):
             end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
         else:
             end_date = timezone.localtime(timezone.now()).date()
-            print(end_date)
         
         if start_date:
             start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
         else:
             # Default to current week (7 days including today)
             start_date = end_date - timedelta(days=6)
+        
+        # Validate date range
+        if start_date > end_date:
+            return Response({
+                'error': 'start_date cannot be after end_date'
+            }, status=400)
         
         # Query orders grouped by day
         daily_data = Order.objects.filter(
@@ -839,104 +936,122 @@ class DailyOrderVolumeAPIView(APIView):
         # Find peak day
         peak_day_data = max(daily_orders, key=lambda x: x['orders']) if daily_orders else None
         peak_day = peak_day_data['day'] if peak_day_data else 'N/A'
+        peak_day_date = peak_day_data['date'] if peak_day_data else 'N/A'
         peak_orders = peak_day_data['orders'] if peak_day_data else 0
         
-        # Calculate vs last week
-        last_week_start = start_date - timedelta(days=7)
-        last_week_end = end_date - timedelta(days=7)
+        # Calculate vs last period (same duration as current period)
+        period_length = (end_date - start_date).days + 1
+        last_period_start = start_date - timedelta(days=period_length)
+        last_period_end = start_date - timedelta(days=1)
         
-        last_week_total = Order.objects.filter(
-            created_at__date__gte=last_week_start,
-            created_at__date__lte=last_week_end
+        last_period_total = Order.objects.filter(
+            created_at__date__gte=last_period_start,
+            created_at__date__lte=last_period_end
         ).count()
         
-        if last_week_total > 0:
-            vs_last_week = round(((total_orders - last_week_total) / last_week_total) * 100, 1)
+        if last_period_total > 0:
+            vs_last_period = round(((total_orders - last_period_total) / last_period_total) * 100, 1)
         else:
-            vs_last_week = 0.0
+            vs_last_period = 0.0 if total_orders == 0 else 100.0
         
         return Response({
             'daily_orders': daily_orders,
             'max_orders': max_orders,
             'peak_day': peak_day,
+            'peak_day_date': peak_day_date,
             'peak_day_orders': peak_orders,
             'avg_daily_orders': avg_orders,
             'total_orders': total_orders,
-            'vs_last_week': vs_last_week,
+            'vs_last_period': vs_last_period,
             'date_range': {
                 'start': str(start_date),
-                'end': str(end_date)
+                'end': str(end_date),
+                'days': period_length
             }
         })
-
-from datetime import datetime
-from django.db.models import Count
-from django.db.models.functions import TruncMonth
-from django.utils import timezone
-from orders.models import Order
 
 class MonthlyGrowthTrendAPIView(APIView):
     """
     GET /api/admin/analytics/monthly-growth-trend
     
     Query Parameters:
-    - months: Number of months to show (optional, default: 7)
+    - start_date: YYYY-MM-DD (optional, calculates from this date)
+    - end_date: YYYY-MM-DD (optional, calculates up to this date)
+    - months: Number of months to show (optional, default: 7, only used if no dates provided)
     
     Returns monthly order volume with growth percentages
     """
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        # Get months parameter
+        # Get date parameters
+        start_date_str = request.query_params.get('start_date')
+        end_date_str = request.query_params.get('end_date')
         months_count = int(request.query_params.get('months', 7))
         
         today = timezone.localtime(timezone.now()).date()
         
-        # Calculate start month and year
-        current_year = today.year
-        current_month = today.month
-        
-        # Go back (months_count - 1) months
-        start_month = current_month - (months_count - 1)
-        start_year = current_year
-        
-        # Handle year rollover
-        while start_month <= 0:
-            start_month += 12
-            start_year -= 1
-        
-        start_date = today.replace(year=start_year, month=start_month, day=1)
+        # If custom date range is provided, use it
+        if start_date_str and end_date_str:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            
+            # Validate
+            if start_date > end_date:
+                return Response({
+                    'error': 'start_date cannot be after end_date'
+                }, status=400)
+            
+            # Set to first day of start month and last day of end month
+            start_date = start_date.replace(day=1)
+            
+        else:
+            # Use months parameter to calculate range
+            end_date = today
+            
+            current_year = today.year
+            current_month = today.month
+            
+            # Go back (months_count - 1) months
+            start_month = current_month - (months_count - 1)
+            start_year = current_year
+            
+            # Handle year rollover
+            while start_month <= 0:
+                start_month += 12
+                start_year -= 1
+            
+            start_date = today.replace(year=start_year, month=start_month, day=1)
         
         # Query monthly data
         monthly_data = Order.objects.filter(
             created_at__date__gte=start_date,
-            created_at__date__lte=today
+            created_at__date__lte=end_date
         ).annotate(
             month=TruncMonth('created_at')
         ).values('month').annotate(
             orders=Count('id')
         ).order_by('month')
         
-        # Create dictionary with year-month tuple as key (more reliable)
+        # Create dictionary with year-month tuple as key
         month_dict = {}
         for item in monthly_data:
             month_dt = item['month']
             key = (month_dt.year, month_dt.month)
             month_dict[key] = item['orders']
         
-        # Build complete monthly data (fill all months)
+        # Build complete monthly data
         monthly_growth = []
         previous_orders = None
         
-        # Iterate through all months
-        year = start_year
-        month = start_month
-        
-        for i in range(months_count):
-            # Create key for lookup
+        # Iterate through all months in range
+        current = start_date
+        while current <= end_date:
+            year = current.year
+            month = current.month
             key = (year, month)
             
-            # Get orders for this month (0 if no data)
+            # Get orders for this month
             orders = month_dict.get(key, 0)
             
             # Calculate MoM growth
@@ -945,11 +1060,8 @@ class MonthlyGrowthTrendAPIView(APIView):
             else:
                 growth = 0.0
             
-            # Create date for formatting
-            month_date = datetime(year, month, 1).date()
-            
             monthly_growth.append({
-                'month': month_date.strftime('%b'),  # Jan, Feb, Mar, etc.
+                'month': current.strftime('%b'),  # Jan, Feb, Mar, etc.
                 'year': year,
                 'orders': orders,
                 'growth': round(growth, 1)
@@ -958,15 +1070,15 @@ class MonthlyGrowthTrendAPIView(APIView):
             previous_orders = orders
             
             # Move to next month
-            month += 1
-            if month > 12:
-                month = 1
-                year += 1
+            if month == 12:
+                current = current.replace(year=year + 1, month=1, day=1)
+            else:
+                current = current.replace(month=month + 1, day=1)
         
         # Find best month
         best_month_data = max(monthly_growth, key=lambda x: x['orders']) if monthly_growth else None
         
-        # Calculate max orders (for progress bar scaling)
+        # Calculate max orders
         max_orders = max(m['orders'] for m in monthly_growth) if monthly_growth else 0
         
         # Calculate average MoM growth (excluding zero growth)
@@ -978,49 +1090,69 @@ class MonthlyGrowthTrendAPIView(APIView):
             'max_orders': max_orders,
             'best_month': {
                 'name': best_month_data['month'] if best_month_data else '',
+                'year': best_month_data['year'] if best_month_data else 0,
                 'orders': best_month_data['orders'] if best_month_data else 0,
                 'growth': best_month_data['growth'] if best_month_data else 0
             },
             'mom_avg_growth': round(avg_growth, 1),
-            'trend_period': f'{len(monthly_growth)} month trend'
+            'trend_period': f'{len(monthly_growth)} month trend',
+            'date_range': {
+                'start': str(start_date),
+                'end': str(end_date)
+            }
         })
+
 
 class TimelineAlertsAPIView(APIView):
     """
     GET /api/admin/analytics/timeline-alerts
     
+    Query Parameters:
+    - reference_date: YYYY-MM-DD (optional, defaults to today)
+    
     Returns:
-    - Same-day orders (created & delivered today)
-    - Approaching deadline (orders due within 3 days)
-    - Overdue orders (past preferred delivery date)
+    - Same-day orders (created & delivered on reference date)
+    - Approaching deadline (orders due within 3 days from reference date)
+    - Overdue orders (past preferred delivery date as of reference date)
     """
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        today = timezone.localtime(timezone.now()).date()
+        # Get reference date (defaults to today)
+        reference_date_str = request.query_params.get('reference_date')
+        
+        if reference_date_str:
+            try:
+                reference_date = datetime.strptime(reference_date_str, '%Y-%m-%d').date()
+            except ValueError:
+                return Response({
+                    'error': 'Invalid reference_date format. Use YYYY-MM-DD'
+                }, status=400)
+        else:
+            reference_date = timezone.localtime(timezone.now()).date()
         
         # 1. Same-Day Orders
-        # Orders created and delivered on the same day (today)
+        # Orders created and delivered on the same day (reference date)
         same_day_orders = Order.objects.filter(
-            created_at__date=today,
+            created_at__date=reference_date,
             order_status='delivered',
-            updated_at__date=today
+            updated_at__date=reference_date
         ).count()
         
         # 2. Approaching Deadline
-        # Orders due within the next 3 days (not yet delivered)
-        three_days_from_now = today + timedelta(days=3)
+        # Orders due within the next 3 days from reference date (not yet delivered)
+        three_days_from_ref = reference_date + timedelta(days=3)
         
         approaching_deadline = Order.objects.filter(
-            preferred_delivery_date__gte=today,
-            preferred_delivery_date__lte=three_days_from_now,
+            preferred_delivery_date__gte=reference_date,
+            preferred_delivery_date__lte=three_days_from_ref,
             order_status__in=['new', 'confirmed', 'cad_done', 'user_confirmed', 'rpt_done', 'casting', 'ready']
         ).count()
         
         # 3. Overdue Orders
-        # Orders past their preferred delivery date (not yet delivered)
+        # Orders past their preferred delivery date as of reference date (not yet delivered)
         overdue_orders = Order.objects.filter(
-            preferred_delivery_date__lt=today,
+            preferred_delivery_date__lt=reference_date,
             order_status__in=['new', 'confirmed', 'cad_done', 'user_confirmed', 'rpt_done', 'casting', 'ready']
         ).count()
         
@@ -1034,24 +1166,25 @@ class TimelineAlertsAPIView(APIView):
         return Response({
             'same_day_orders': {
                 'count': same_day_orders,
-                'label': 'Orders created & delivered today',
+                'label': f'Orders created & delivered on {reference_date.strftime("%Y-%m-%d")}',
                 'color': 'blue'
             },
             'approaching_deadline': {
                 'count': approaching_deadline,
-                'label': 'Orders due within 3 days',
+                'label': f'Orders due within 3 days from {reference_date.strftime("%Y-%m-%d")}',
                 'color': 'yellow'
             },
             'overdue_orders': {
                 'count': overdue_orders,
-                'label': 'Past preferred delivery date',
+                'label': f'Past preferred delivery date as of {reference_date.strftime("%Y-%m-%d")}',
                 'color': 'red'
             },
             'summary': {
                 'total_active_orders': total_active_orders,
                 'on_time_orders': on_time_orders,
                 'at_risk_percentage': round((overdue_orders / total_active_orders * 100) if total_active_orders > 0 else 0, 1)
-            }
+            },
+            'reference_date': str(reference_date)
         })
 
 
@@ -1351,10 +1484,12 @@ class CommunicationAnalyticsViewV2(APIView):
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAdminUser
+from rest_framework.permissions import IsAuthenticated
 from django.db.models import Count, Avg, Q, F, Min, Max
 from django.utils import timezone
-from datetime import timedelta
+from datetime import timedelta, datetime
+from orders.models import Order
+
 
 class CustomerAnalyticsView(APIView):
     """
@@ -1381,7 +1516,7 @@ class CustomerAnalyticsView(APIView):
         # Get all analytics data
         user_base_data = self._get_user_base_metrics(start, end, prev_start, prev_end)
         engagement_data = self._get_engagement_metrics(start, end)
-        top_customers_data = self._get_top_customers(limit=10)
+        top_customers_data = self._get_top_customers(start, end, limit=10)
         behavior_data = self._get_behavior_metrics(start, end)
         
         return Response({
@@ -1402,9 +1537,13 @@ class CustomerAnalyticsView(APIView):
     def _calculate_date_range(self, time_filter, start_date, end_date):
         """Calculate start and end dates based on filter"""
         if start_date and end_date:
-            from datetime import datetime
             start = datetime.strptime(start_date, '%Y-%m-%d')
             end = datetime.strptime(end_date, '%Y-%m-%d')
+            # Make end date inclusive of the entire day
+            end = datetime.combine(end.date(), datetime.max.time())
+            # Make start and end timezone-aware
+            start = timezone.make_aware(start) if timezone.is_naive(start) else start
+            end = timezone.make_aware(end) if timezone.is_naive(end) else end
         else:
             end = timezone.localtime(timezone.now())
             if time_filter == 'today':
@@ -1423,8 +1562,12 @@ class CustomerAnalyticsView(APIView):
     def _get_user_base_metrics(self, start, end, prev_start, prev_end):
         """Get user base metrics with growth calculations"""
         
-        # Total customers (all customers, not just in period)
-        total_customers = User.objects.filter(user_type='customer').count()
+        # Total customers (all customers up to end date)
+        total_customers = User.objects.filter(
+            user_type='customer',
+            date_joined__lte=end
+        ).count()
+        
         prev_total_customers = User.objects.filter(
             user_type='customer',
             date_joined__lt=start
@@ -1460,37 +1603,38 @@ class CustomerAnalyticsView(APIView):
             user_type='customer',
             orders__created_at__range=[start, end]
         ).annotate(
-            order_count=Count('orders')
+            order_count=Count('orders', filter=Q(orders__created_at__range=[start, end]))
         ).filter(order_count__gte=2).count()
         
         prev_repeat_customers = User.objects.filter(
             user_type='customer',
             orders__created_at__range=[prev_start, prev_end]
         ).annotate(
-            order_count=Count('orders')
+            order_count=Count('orders', filter=Q(orders__created_at__range=[prev_start, prev_end]))
         ).filter(order_count__gte=2).count()
         repeat_change = self._calculate_percentage_change(repeat_customers, prev_repeat_customers)
         
-        # Total admins
+        # Total admins (all time)
         total_admins = User.objects.filter(user_type='admin').count()
         
         # New registrations breakdown
+        now = timezone.localtime(timezone.now())
         new_reg_today = User.objects.filter(
             user_type='customer',
-            date_joined__date=timezone.localtime(timezone.now()).date()
+            date_joined__date=now.date()
         ).count()
         
         new_reg_week = User.objects.filter(
             user_type='customer',
-            date_joined__gte=timezone.localtime(timezone.now()) - timedelta(days=7)
+            date_joined__gte=now - timedelta(days=7)
         ).count()
         
         new_reg_month = User.objects.filter(
             user_type='customer',
-            date_joined__gte=timezone.localtime(timezone.now()) - timedelta(days=30)
+            date_joined__gte=now - timedelta(days=30)
         ).count()
         
-        # Growth rate (registrations as percentage of total)
+        # Growth rate (registrations as percentage of previous total)
         growth_rate = (new_registrations / prev_total_customers * 100) if prev_total_customers > 0 else 0
         
         return {
@@ -1524,36 +1668,42 @@ class CustomerAnalyticsView(APIView):
         }
     
     def _get_engagement_metrics(self, start, end):
-        """Get customer engagement metrics"""
+        """Get customer engagement metrics FOR THE FILTERED PERIOD"""
         
-        # All customers
-        all_customers = User.objects.filter(user_type='customer')
+        # All customers who were registered before or during the period
+        all_customers = User.objects.filter(
+            user_type='customer',
+            date_joined__lte=end
+        )
         total_customers = all_customers.count()
         
-        # Active customers (placed at least one order)
-        active_customers = all_customers.filter(orders__isnull=False).distinct()
+        # Active customers (placed at least one order IN THIS PERIOD)
+        active_customers = all_customers.filter(
+            orders__created_at__range=[start, end]
+        ).distinct()
         active_count = active_customers.count()
         
-        # Inactive customers (no orders)
+        # Inactive customers (no orders IN THIS PERIOD)
         inactive_count = total_customers - active_count
         
-        # Repeat customers (2+ orders ever)
+        # Repeat customers (2+ orders IN THIS PERIOD)
         repeat_customers = all_customers.annotate(
-            order_count=Count('orders')
+            order_count=Count('orders', filter=Q(orders__created_at__range=[start, end]))
         ).filter(order_count__gte=2)
         repeat_count = repeat_customers.count()
         
-        # Average orders per customer (only for active customers)
+        # Average orders per customer (only for active customers IN THIS PERIOD)
         total_orders = Order.objects.filter(
-            customer__user_type='customer'
+            customer__user_type='customer',
+            created_at__range=[start, end]
         ).count()
         avg_orders_per_customer = (total_orders / active_count) if active_count > 0 else 0
         
-        # Customer retention rate (percentage who made 2+ orders)
+        # Customer retention rate (percentage who made 2+ orders IN THIS PERIOD)
         retention_rate = (repeat_count / active_count * 100) if active_count > 0 else 0
         
-        # Average days between orders for repeat customers
-        avg_days_between = self._calculate_avg_days_between_orders()
+        # Average days between orders for repeat customers IN THIS PERIOD
+        avg_days_between = self._calculate_avg_days_between_orders(start, end)
         
         return {
             'active_customers': active_count,
@@ -1564,47 +1714,52 @@ class CustomerAnalyticsView(APIView):
             'avg_days_between_orders': avg_days_between
         }
     
-    def _calculate_avg_days_between_orders(self):
-        """Calculate average days between consecutive orders for repeat customers"""
+    def _calculate_avg_days_between_orders(self, start, end):
+        """Calculate average days between consecutive orders for repeat customers IN THE FILTERED PERIOD"""
         
-        # Get customers with 2+ orders
+        # Get customers with 2+ orders IN THIS PERIOD
         repeat_customers = User.objects.filter(
             user_type='customer'
         ).annotate(
-            order_count=Count('orders')
+            order_count=Count('orders', filter=Q(orders__created_at__range=[start, end]))
         ).filter(order_count__gte=2)
         
         total_days = 0
         total_gaps = 0
         
         for customer in repeat_customers:
-            orders = customer.orders.all().order_by('created_at')
+            # Get orders IN THIS PERIOD only
+            orders = customer.orders.filter(
+                created_at__range=[start, end]
+            ).order_by('created_at')
+            
             if orders.count() < 2:
                 continue
             
             # Calculate gaps between consecutive orders
-            for i in range(1, len(orders)):
-                gap = (orders[i].created_at - orders[i-1].created_at).days
+            orders_list = list(orders)
+            for i in range(1, len(orders_list)):
+                gap = (orders_list[i].created_at - orders_list[i-1].created_at).days
                 total_days += gap
                 total_gaps += 1
         
         return round(total_days / total_gaps) if total_gaps > 0 else 0
     
-    def _get_top_customers(self, limit=10):
-        """Get top customers by order count"""
+    def _get_top_customers(self, start, end, limit=10):
+        """Get top customers by order count IN THE FILTERED PERIOD"""
         
-        # Get customers with their order counts
+        # Get customers with their order counts IN THIS PERIOD
         customers = User.objects.filter(
             user_type='customer',
-            orders__isnull=False
+            orders__created_at__range=[start, end]
         ).annotate(
-            order_count=Count('orders'),
-            last_order_date=Max('orders__created_at')
-        ).order_by('-order_count')[:limit]
+            order_count=Count('orders', filter=Q(orders__created_at__range=[start, end])),
+            last_order_date=Max('orders__created_at', filter=Q(orders__created_at__range=[start, end]))
+        ).filter(order_count__gt=0).order_by('-order_count')[:limit]
         
         top_customers = []
         for customer in customers:
-            # Determine status based on order count
+            # Determine status based on order count IN THIS PERIOD
             if customer.order_count >= 10:
                 status = 'VIP'
             elif customer.order_count >= 7:
@@ -1626,7 +1781,7 @@ class CustomerAnalyticsView(APIView):
         return top_customers
     
     def _get_behavior_metrics(self, start, end):
-        """Get customer behavior metrics"""
+        """Get customer behavior metrics IN THE FILTERED PERIOD"""
         
         # Orders in period
         orders = Order.objects.filter(created_at__range=[start, end])
@@ -1636,7 +1791,7 @@ class CustomerAnalyticsView(APIView):
         returning = 0
         
         for order in orders:
-            # Check if this is the user's first order
+            # Check if this is the user's first order EVER (not just in this period)
             first_order = order.customer.orders.order_by('created_at').first()
             if first_order and first_order.id == order.id:
                 first_time += 1
