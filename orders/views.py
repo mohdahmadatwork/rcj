@@ -176,21 +176,87 @@ class CustomerOrderUpdateView(generics.UpdateAPIView):
         kwargs['partial'] = True
         return self.update(request, *args, **kwargs)
 
+
+class OrderPaginationWithStats(PageNumberPagination):
+    """Pagination with stats specifically for OrderListView"""
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+    def get_paginated_response(self, data):
+        # Calculate stats for the entire filtered queryset
+        stats = self.calculate_order_stats()
+        
+        return Response({
+            'count': self.page.paginator.count,
+            'next': self.get_next_link(),
+            'previous': self.get_previous_link(),
+            'stats': stats,
+            'results': data
+        })
+    
+    def calculate_order_stats(self):
+        """Calculate order statistics for the entire filtered queryset (all pages)"""
+        # Get the view to access its queryset
+        view = self.request.parser_context.get('view')
+        
+        if view and hasattr(view, 'get_queryset'):
+            # Get the filtered queryset (respects all filters applied in the view)
+            filtered_queryset = view.get_queryset()
+        else:
+            # Fallback to all orders if view is not accessible
+            from orders.models import Order
+            filtered_queryset = Order.objects.all()
+        
+        # Define in-progress statuses
+        in_progress_statuses = ['confirmed', 'cad_done', 'user_confirmed', 'rpt_done', 'casting', 'ready']
+        
+        # Calculate stats
+        total_orders = filtered_queryset.count()
+        new_orders = filtered_queryset.filter(order_status='new').count()
+        in_progress = filtered_queryset.filter(order_status__in=in_progress_statuses).count()
+        delivered = filtered_queryset.filter(order_status='delivered').count()
+        
+        # Overdue orders (past preferred delivery date and not delivered)
+        today = timezone.localtime(timezone.now()).date()
+        overdue = filtered_queryset.filter(
+            preferred_delivery_date__lt=today,
+            order_status__in=['new'] + in_progress_statuses
+        ).count()
+        
+        return {
+            'total_orders': total_orders,
+            'new_orders': new_orders,
+            'in_progress': in_progress,
+            'delivered': delivered,
+            'overdue': overdue
+        }
+
 class OrderListView(generics.ListAPIView):
-    """Admin API for listing all orders"""
+    """
+    Admin API for listing all orders with comprehensive filtering
+    
+    Query Parameters:
+    - search: Search by order_id, client_id, full_name, email, contact_number, username
+    - status: Filter by order status (declined, new, confirmed, cad_done, user_confirmed, rpt_done, casting, ready, delivered)
+    - date_filter: Filter by date range (all_time, today, this_week, this_month, custom)
+    - start_date: Custom start date (YYYY-MM-DD) - used when date_filter=custom
+    - end_date: Custom end date (YYYY-MM-DD) - used when date_filter=custom
+    - sort_by: Sort field (created_at, delivery_date, status) - default: created_at
+    - sort_order: Sort direction (newest, oldest) - default: newest
+    """
     serializer_class = AdminOrderListSerializer
     permission_classes = [IsAuthenticated]
-    pagination_class = CustomPagination
-
+    pagination_class = OrderPaginationWithStats
 
     def get_queryset(self):
         user = self.request.user
         if not is_admin_user(user):
             return Order.objects.none()
 
-        qs = Order.objects.all().order_by('-created_at')
+        qs = Order.objects.all()
 
-        # Search
+        # 1. Search Filter
         search = self.request.query_params.get('search')
         if search:
             qs = qs.filter(
@@ -202,10 +268,65 @@ class OrderListView(generics.ListAPIView):
                 Q(customer__username__icontains=search)
             )
 
-        # Status filter
+        # 2. Status Filter
         status_filter = self.request.query_params.get('status')
-        if status_filter:
+        if status_filter and status_filter != 'all':
             qs = qs.filter(order_status=status_filter)
+
+        # 3. Date Filter
+        date_filter = self.request.query_params.get('date_filter', 'all_time')
+        
+        if date_filter == 'today':
+            today = timezone.localtime(timezone.now()).date()
+            qs = qs.filter(created_at__date=today)
+        
+        elif date_filter == 'this_week':
+            today = timezone.localtime(timezone.now()).date()
+            start_of_week = today - timedelta(days=today.weekday())  # Monday
+            qs = qs.filter(created_at__date__gte=start_of_week)
+        
+        elif date_filter == 'this_month':
+            today = timezone.localtime(timezone.now()).date()
+            start_of_month = today.replace(day=1)
+            qs = qs.filter(created_at__date__gte=start_of_month)
+        
+        elif date_filter == 'custom':
+            start_date = self.request.query_params.get('start_date')
+            end_date = self.request.query_params.get('end_date')
+            
+            if start_date:
+                try:
+                    start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+                    qs = qs.filter(created_at__date__gte=start_date_obj)
+                except ValueError:
+                    pass  # Invalid date format, ignore
+            
+            if end_date:
+                try:
+                    end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+                    qs = qs.filter(created_at__date__lte=end_date_obj)
+                except ValueError:
+                    pass  # Invalid date format, ignore
+
+        # 4. Sort By Filter
+        sort_by = self.request.query_params.get('sort_by', 'created_at')
+        sort_order = self.request.query_params.get('sort_order', 'newest')
+        
+        # Map sort_by values to model fields
+        sort_field_map = {
+            'created_at': 'created_at',
+            'created_date': 'created_at',
+            'delivery_date': 'preferred_delivery_date',
+            'status': 'order_status'
+        }
+        
+        sort_field = sort_field_map.get(sort_by, 'created_at')
+        
+        # Apply sort order
+        if sort_order == 'oldest':
+            qs = qs.order_by(sort_field)  # Ascending
+        else:  # newest (default)
+            qs = qs.order_by(f'-{sort_field}')  # Descending
 
         return qs
 
