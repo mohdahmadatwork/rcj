@@ -122,3 +122,81 @@ class CustomerLookupSerializer(serializers.ModelSerializer):
 
     def get_full_name(self, obj):
         return f"{obj.first_name} {obj.last_name}".strip() or obj.username
+    
+
+# users/serializers.py
+
+from rest_framework import serializers
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
+class UserCreateSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
+    password2 = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'}, label='Confirm Password')
+    
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'password', 'password2', 'first_name', 'last_name', 'user_type', 'phone', 'client_id']
+        read_only_fields = ['id', 'client_id']
+        extra_kwargs = {
+            'email': {'required': True},
+        }
+    
+    def validate(self, attrs):
+        # Validate that passwords match
+        if attrs['password'] != attrs['password2']:
+            raise serializers.ValidationError({"password": "Password fields didn't match."})
+        return attrs
+    
+    def create(self, validated_data):
+        # Remove password2 as it's not needed for user creation
+        validated_data.pop('password2')
+        
+        # Use create_user method to properly hash the password
+        user = User.objects.create_user(
+            username=validated_data['username'],
+            email=validated_data['email'],
+            password=validated_data['password'],
+            first_name=validated_data.get('first_name', ''),
+            last_name=validated_data.get('last_name', ''),
+            user_type=validated_data.get('user_type', 'customer'),
+            phone=validated_data.get('phone', ''),
+        )
+        
+        return user
+
+
+class UserSerializer(serializers.ModelSerializer):
+    """Serializer for listing/retrieving users (without password)"""
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'user_type', 'phone', 'client_id', 'is_active', 'date_joined']
+        read_only_fields = ['id', 'client_id', 'date_joined']
+
+
+class UserListSerializer(serializers.ModelSerializer):
+    """Serializer for listing users"""
+    class Meta:
+        model = User
+        fields = [
+            'id', 
+            'username', 
+            'email', 
+            'first_name', 
+            'last_name', 
+            'user_type', 
+            'phone', 
+            'client_id', 
+            'is_active', 
+            'date_joined'
+        ]
+        read_only_fields = fields
+
+
+class UserStatsSerializer(serializers.Serializer):
+    """Serializer for user statistics"""
+    total_users = serializers.IntegerField()
+    admin_users = serializers.IntegerField()
+    customers = serializers.IntegerField()
+    inactive_users = serializers.IntegerField()

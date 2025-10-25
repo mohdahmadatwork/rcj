@@ -10,7 +10,11 @@ urlpatterns = [
     path('dashboard/', views.customer_dashboard, name='customer-dashboard'),
     path('admin/customers/', views.AdminCustomerListView.as_view(), name='admin-customer-list'),
     path('admin/customers/lookup/', views.AdminCustomerLookupView.as_view(), name='admin-customer-lookup'),
-     # Add Google login
+    # path('users/create/', views.UserCreateAPIView.as_view(), name='user-create'),
+    # path('users/<int:pk>/', views.UserDetailAPIView.as_view(), name='user-detail'),
+    path('users/', views.UserListCreateAPIView.as_view(), name='user-list-create'),
+    path('users/<int:pk>/', views.UserDetailAPIView.as_view(), name='user-detail'),
+    # Add Google login
     path('google/', views.GoogleLogin.as_view(), name='google_login'),
     
     # Add dj-rest-auth URLs

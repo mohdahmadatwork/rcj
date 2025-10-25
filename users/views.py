@@ -14,7 +14,8 @@ from .serializers import (
     UserProfileSerializer,
     UserDetailSerializer,
     CustomerListSerializer,
-    CustomerLookupSerializer
+    CustomerLookupSerializer,
+    UserListSerializer
 )
 from dj_rest_auth.registration.views import SocialLoginView
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
@@ -288,3 +289,186 @@ class AdminCustomerLookupView(generics.ListAPIView):
         if not user.is_admin_user():
             return User.objects.none()
         return User.objects.filter(user_type='customer').order_by('username')
+    
+
+# users/views.py
+
+# from rest_framework import status, generics
+# from rest_framework.response import Response
+# from rest_framework.permissions import IsAdminUser
+# from django.contrib.auth import get_user_model
+# from .serializers import UserCreateSerializer, UserSerializer
+
+# User = get_user_model()
+
+# class UserCreateAPIView(generics.CreateAPIView):
+#     """
+#     API endpoint that allows only admin users to create new users
+#     """
+#     queryset = User.objects.all()
+#     serializer_class = UserCreateSerializer
+#     permission_classes = [IsAdminUser]  # Only admin users can access this endpoint
+    
+#     def create(self, request, *args, **kwargs):
+#         serializer = self.get_serializer(data=request.data)
+#         serializer.is_valid(raise_exception=True)
+#         user = serializer.save()
+        
+#         # Return user data without password
+#         response_serializer = UserSerializer(user)
+#         return Response(
+#             {
+#                 'message': 'User created successfully',
+#                 'user': response_serializer.data
+#             },
+#             status=status.HTTP_201_CREATED
+#         )
+
+
+# class UserListAPIView(generics.ListAPIView):
+#     """
+#     API endpoint to list all users (admin only)
+#     """
+#     queryset = User.objects.all()
+#     serializer_class = UserSerializer
+#     permission_classes = [IsAdminUser]
+
+from rest_framework import status, generics
+from rest_framework.response import Response
+from rest_framework.permissions import IsAdminUser
+from django.contrib.auth import get_user_model
+from django.db.models import Q, Count, Case, When, IntegerField
+from .serializers import (
+    UserCreateSerializer, 
+    UserSerializer, 
+    UserListSerializer,
+    UserStatsSerializer
+)
+from .pagination import UserPagination
+
+User = get_user_model()
+
+
+class UserListCreateAPIView(generics.ListCreateAPIView):
+    """
+    API endpoint to list all users with pagination and statistics
+    GET: List users with filters and pagination
+    POST: Create new user (admin only)
+    """
+    serializer_class = UserListSerializer
+    permission_classes = [IsAdminUser]
+    pagination_class = UserPagination
+    
+    def get_queryset(self):
+        """
+        Apply filters to queryset based on query parameters
+        """
+        queryset = User.objects.all().order_by('-date_joined')
+        
+        # Search filter (username, email, first_name, last_name)
+        search = self.request.query_params.get('search', None)
+        if search:
+            queryset = queryset.filter(
+                Q(username__icontains=search) |
+                Q(email__icontains=search) |
+                Q(first_name__icontains=search) |
+                Q(last_name__icontains=search) |
+                Q(phone__icontains=search)
+            )
+        
+        # User type filter
+        user_type = self.request.query_params.get('user_type', None)
+        if user_type and user_type != 'all':
+            queryset = queryset.filter(user_type=user_type)
+        
+        # Status filter (active/inactive)
+        is_active = self.request.query_params.get('status', None)
+        if is_active == 'active':
+            queryset = queryset.filter(is_active=True)
+        elif is_active == 'inactive':
+            queryset = queryset.filter(is_active=False)
+        
+        # Date range filter
+        date_from = self.request.query_params.get('date_from', None)
+        date_to = self.request.query_params.get('date_to', None)
+        
+        if date_from:
+            queryset = queryset.filter(date_joined__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(date_joined__lte=date_to)
+        
+        return queryset
+    
+    def get_user_statistics(self, base_queryset=None):
+        """
+        Calculate user statistics based on filters
+        Statistics are calculated on the filtered queryset, not paginated
+        """
+        # If base_queryset is provided, use it (for filtered stats)
+        # Otherwise use all users (for global stats)
+        if base_queryset is None:
+            queryset = User.objects.all()
+        else:
+            queryset = base_queryset
+        
+        # Calculate statistics using aggregation
+        stats = queryset.aggregate(
+            total_users=Count('id'),
+            admin_users=Count('id', filter=Q(user_type='admin')),
+            customers=Count('id', filter=Q(user_type='customer')),
+            inactive_users=Count('id', filter=Q(is_active=False))
+        )
+        
+        return stats
+    
+    def list(self, request, *args, **kwargs):
+        """
+        Override list method to include statistics in response
+        """
+        # Get the filtered queryset (before pagination)
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        # Calculate statistics on filtered queryset
+        stats = self.get_user_statistics(queryset)
+        
+        # Paginate the queryset
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            response = self.get_paginated_response(serializer.data)
+            # Add statistics to the response
+            response.data['stats'] = stats
+            return response
+        
+        # If pagination is not enabled
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+            'results': serializer.data,
+            'stats': stats
+        })
+    
+    def post(self, request, *args, **kwargs):
+        """
+        Create a new user (admin only)
+        """
+        serializer = UserCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        
+        # Return user data without password
+        response_serializer = UserListSerializer(user)
+        return Response(
+            {
+                'message': 'User created successfully',
+                'user': response_serializer.data
+            },
+            status=status.HTTP_201_CREATED
+        )
+
+class UserDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    API endpoint to retrieve, update or delete a user (admin only)
+    """
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    permission_classes = [IsAdminUser]
