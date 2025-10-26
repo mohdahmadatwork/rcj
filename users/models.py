@@ -8,6 +8,9 @@ class CustomUser(AbstractUser):
     USER_TYPES = (
         ('admin', 'Admin'),
         ('customer', 'Customer'),
+        ('senior', 'Senior'),
+        ('staff', 'Staff'),
+        ('manager', 'Manager'),
     )
     user_type = models.CharField(max_length=10, choices=USER_TYPES, default='customer')
     phone = models.CharField(max_length=15, blank=True)

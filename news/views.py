@@ -24,6 +24,17 @@ def is_admin_user(user):
     """Helper function to check if user is admin"""
     return user.is_authenticated and hasattr(user, 'user_type') and user.user_type.lower() == 'admin'
 
+def is_staff_user(user):
+    """Helper function to check if user is staff or higher"""
+    return user.is_authenticated and hasattr(user, 'user_type') and user.user_type.lower() in ['staff', 'manager', 'senior', 'admin']
+
+def is_manager_user(user):
+    """Helper function to check if user is manager or higher"""
+    return user.is_authenticated and hasattr(user, 'user_type') and user.user_type.lower() in ['manager', 'senior', 'admin']
+
+def is_senior_user(user):
+    """Helper function to check if user is senior or higher"""
+    return user.is_authenticated and hasattr(user, 'user_type') and user.user_type.lower() in ['senior', 'admin']
 
 class NewsPagination(PageNumberPagination):
     page_size = 10
@@ -207,7 +218,7 @@ class AdminNewsListView(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        if not is_admin_user(user):
+        if not is_manager_user(user):
             return NewsItem.objects.none()
 
         queryset = NewsItem.objects.select_related('target_user').prefetch_related('read_by').order_by('-published_at', '-created_at')
@@ -286,8 +297,8 @@ class AdminNewsCreateView(generics.CreateAPIView):
     queryset = NewsItem.objects.all()
 
     def create(self, request, *args, **kwargs):
-        if not is_admin_user(request.user):
-            return Response({'error': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+        if not is_manager_user(request.user):
+            return Response({'error': 'Manager or higher access required'}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -333,8 +344,8 @@ class AdminNewsUpdateView(generics.UpdateAPIView):
 
     def get_object(self):
         obj = get_object_or_404(NewsItem, id=self.kwargs.get('id'))
-        if not is_admin_user(self.request.user):
-            self.permission_denied(self.request, message="Admin access required")
+        if not is_manager_user(self.request.user):
+            self.permission_denied(self.request, message="Manager or higher access required")
         return obj
 
     def update(self, request, *args, **kwargs):
@@ -357,8 +368,8 @@ class AdminNewsUpdateView(generics.UpdateAPIView):
 @permission_classes([IsAuthenticated])
 def admin_news_targeting_options(request):
     """Get available targeting options for news creation"""
-    if not is_admin_user(request.user):
-        return Response({'error': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+    if not is_manager_user(request.user):
+        return Response({'error': 'Manager or higher access required'}, status=status.HTTP_403_FORBIDDEN)
 
     # Get available customers for targeting (limited for performance)
     customers = CustomUser.objects.filter(user_type='customer', is_active=True).values(
@@ -423,8 +434,8 @@ def admin_news_targeting_options(request):
 @permission_classes([IsAuthenticated])
 def admin_news_analytics(request, id):
     """Get detailed analytics for a news item"""
-    if not is_admin_user(request.user):
-        return Response({'error': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
+    if not is_manager_user(request.user):
+        return Response({'error': 'Manager or higher access required'}, status=status.HTTP_403_FORBIDDEN)
 
     try:
         news_item = NewsItem.objects.select_related('target_user').prefetch_related('read_by', 'target_users').get(id=id)

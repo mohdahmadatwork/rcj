@@ -416,6 +416,9 @@ class UserListCreateAPIView(generics.ListCreateAPIView):
             total_users=Count('id'),
             admin_users=Count('id', filter=Q(user_type='admin')),
             customers=Count('id', filter=Q(user_type='customer')),
+            senior_users=Count('id', filter=Q(user_type='senior')),
+            staff_users=Count('id', filter=Q(user_type='staff')),
+            manager_users=Count('id', filter=Q(user_type='manager')),
             inactive_users=Count('id', filter=Q(is_active=False))
         )
         

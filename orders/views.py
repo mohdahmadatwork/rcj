@@ -32,6 +32,18 @@ def is_admin_user(user):
     """Helper function to check if user is admin"""
     return user.is_authenticated and hasattr(user, 'user_type') and user.user_type.lower() == 'admin'
 
+def is_manager_user(user):
+    """Helper function to check if user is manager or higher"""
+    return user.is_authenticated and hasattr(user, 'user_type') and user.user_type.lower() in ['manager', 'senior', 'admin']
+
+def is_senior_user(user):
+    """Helper function to check if user is senior or higher"""
+    return user.is_authenticated and hasattr(user, 'user_type') and user.user_type.lower() in ['senior', 'admin']
+
+def is_staff_user(user):
+    """Helper function to check if user is staff or higher"""
+    return user.is_authenticated and hasattr(user, 'user_type') and user.user_type.lower() in ['staff', 'senior', 'manager', 'admin']
+
 class OrderCreateView(generics.CreateAPIView):
     """Authenticated API for creating orders"""
     queryset = Order.objects.all()
@@ -251,7 +263,7 @@ class OrderListView(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        if not is_admin_user(user):
+        if not is_staff_user(user):
             return Order.objects.none()
 
         qs = Order.objects.all()
@@ -350,7 +362,7 @@ class OrderAdminDetailView(generics.RetrieveAPIView):
     queryset = Order.objects.all()
     
     def get_queryset(self):
-        if not is_admin_user(self.request.user):
+        if not is_staff_user(self.request.user):
             return Order.objects.none()
         return Order.objects.select_related().prefetch_related('files')
     
@@ -368,10 +380,10 @@ class OrderAdminDetailView(generics.RetrieveAPIView):
 @permission_classes([IsAuthenticated])
 def order_detail(request, order_id):
     """Admin API for getting order details (function-based alternative)"""
-    
-    if not is_admin_user(request.user):
-        return Response({'error': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
-    
+
+    if not is_staff_user(request.user):
+        return Response({'error': 'Staff or higher access required'}, status=status.HTTP_403_FORBIDDEN)
+
     try:
         order = Order.objects.select_related().prefetch_related('files').get(order_id=order_id)
     except Order.DoesNotExist:
@@ -388,9 +400,9 @@ def order_detail(request, order_id):
 @permission_classes([IsAuthenticated])
 def accept_decline_order(request, order_id):
     """Admin API for accepting or declining orders"""
-    if not is_admin_user(request.user):
-        return Response({'error': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
-        
+    if not is_staff_user(request.user):
+        return Response({'error': 'Staff or higher access required'}, status=status.HTTP_403_FORBIDDEN)
+
     order = get_object_or_404(Order, order_id=order_id)
     action = request.data.get('action')  # 'accept' or 'decline'
     declined_reason = request.data.get('declined_reason', '')
@@ -440,9 +452,9 @@ def accept_decline_order(request, order_id):
 @permission_classes([IsAuthenticated])
 def update_order_status(request, order_id):
     """Admin API for updating order status"""
-    if not is_admin_user(request.user):
-        return Response({'error': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
-        
+    if not is_staff_user(request.user):
+        return Response({'error': 'Staff or higher access required'}, status=status.HTTP_403_FORBIDDEN)
+
     order = get_object_or_404(Order, order_id=order_id)
     serializer = OrderUpdateSerializer(order, data=request.data, partial=True)
     
@@ -479,9 +491,9 @@ def update_order_status(request, order_id):
 @permission_classes([IsAuthenticated])
 def order_logs(request, order_id):
     """Admin API for viewing order change logs"""
-    if not is_admin_user(request.user):
-        return Response({'error': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
-        
+    if not is_staff_user(request.user):
+        return Response({'error': 'Staff or higher access required'}, status=status.HTTP_403_FORBIDDEN)
+
     order = get_object_or_404(Order, order_id=order_id)
     logs = OrderLog.objects.filter(order=order).order_by('-timestamp')
     serializer = OrderLogSerializer(logs, many=True)
@@ -495,9 +507,9 @@ class AdminOrderCreateView(generics.CreateAPIView):
     parser_classes = [MultiPartParser, FormParser]
     
     def create(self, request, *args, **kwargs):
-        if not is_admin_user(request.user):
-            return Response({'error': 'Admin access required'}, status=status.HTTP_403_FORBIDDEN)
-        
+        if not is_staff_user(request.user):
+            return Response({'error': 'Staff or higher access required'}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = self.get_serializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         order = serializer.save(created_by=request.user)
@@ -809,7 +821,7 @@ class AdminContactListView(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        if not is_admin_user(user):
+        if not is_staff_user(user):
             return Contact.objects.none()
 
         qs = (
@@ -852,8 +864,8 @@ class AdminContactUpdateView(generics.UpdateAPIView):
 
     def get_object(self):
         obj = get_object_or_404(Contact, id=self.kwargs.get('id'))
-        if not is_admin_user(self.request.user):
-            self.permission_denied(self.request, message="Admin access required")
+        if not is_staff_user(self.request.user):
+            self.permission_denied(self.request, message="Staff or higher access required")
         return obj
 
     def update(self, request, *args, **kwargs):
@@ -882,8 +894,8 @@ class OrderAdminUpdateView(generics.UpdateAPIView):
 
     def get_object(self):
         obj = get_object_or_404(Order, order_id=self.kwargs.get('order_id'))
-        if not is_admin_user(self.request.user):
-            self.permission_denied(self.request, message="Admin access required")
+        if not is_staff_user(self.request.user):
+            self.permission_denied(self.request, message="Staff or higher access required")
         return obj
 
     def update(self, request, *args, **kwargs):

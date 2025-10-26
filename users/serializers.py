@@ -15,7 +15,7 @@ class UserDetailSerializer(serializers.ModelSerializer):
     """Serializer for user details in login response"""
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'phone']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'phone', 'user_type']
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)

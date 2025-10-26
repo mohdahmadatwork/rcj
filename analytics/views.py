@@ -13,6 +13,10 @@ def is_admin_user(user):
     """Helper function to check if user is admin"""
     return user.is_authenticated and hasattr(user, 'user_type') and user.user_type.lower() == 'admin'
 
+def is_senior_user(user):
+    """Helper function to check if user is senior or higher"""
+    return user.is_authenticated and hasattr(user, 'user_type') and user.user_type.lower() in ['senior', 'admin']
+
 User = get_user_model()
 class DashboardAnalyticsView(APIView):
     """
@@ -92,6 +96,10 @@ class CommunicationAnalyticsView(APIView):
     
     def get(self, request):
         """Get detailed communication statistics."""
+
+        if not is_senior_user(request.user):
+            return Response({'error': 'Senior or higher access required'}, status=status.HTTP_403_FORBIDDEN)
+
         input_serializer = DateRangeInputSerializer(data=request.query_params)
         
         if not input_serializer.is_valid():
@@ -149,6 +157,9 @@ class FullAdminAnalyticsAPIView(APIView):
             'start_date': request.query_params.get('start_date'),
             'end_date': request.query_params.get('end_date'),
         }
+
+        if not is_senior_user(request.user):
+            return Response({'error': 'Senior or higher access required'}, status=status.HTTP_403_FORBIDDEN)
         
         # Get analytics data from service
         service = AdminAnalyticsService()
@@ -185,7 +196,10 @@ class OrderStatusDistributionAPIView(APIView):
         # Get date filters from query parameters
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
-        
+
+        if not is_senior_user(request.user):
+            return Response({'error': 'Senior or higher access required'}, status=status.HTTP_403_FORBIDDEN)
+
         # Build base queryset
         queryset = Order.objects.all()
         
@@ -284,6 +298,9 @@ class StagePerformanceAPIView(APIView):
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
         
+        if not is_senior_user(request.user):
+            return Response({'error': 'Senior or higher access required'}, status=status.HTTP_403_FORBIDDEN)
+
         # Validate date formats
         if start_date:
             try:
@@ -456,7 +473,8 @@ class CombinedOrderAnalyticsAPIView(APIView):
         # Get status distribution
         status_view = OrderStatusDistributionAPIView()
         status_response = status_view.get(request)
-        
+        if not is_senior_user(request.user):
+            return Response({'error': 'Senior or higher access required'}, status=status.HTTP_403_FORBIDDEN)
         # Check if there was an error in status_view
         if status_response.status_code != 200:
             return status_response
@@ -511,7 +529,8 @@ class TimeTrendsAnalyticsAPIView(APIView):
         # Get date parameters
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
-        
+        if not is_senior_user(request.user):
+            return Response({'error': 'Senior or higher access required'}, status=status.HTTP_403_FORBIDDEN)
         # Parse dates or use defaults
         if end_date:
             end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
@@ -733,6 +752,8 @@ class WeeklyOrderVolumeAPIView(APIView):
     
     def get(self, request):
         # Default to current week
+        if not is_senior_user(request.user):
+            return Response({'error': 'Senior or higher access required'}, status=status.HTTP_403_FORBIDDEN)
         today = timezone.localtime(timezone.now()).date()
         week_start = today - timedelta(days=today.weekday())  # Monday
         week_end = week_start + timedelta(days=6)  # Sunday
@@ -789,6 +810,8 @@ class MonthlyGrowthAPIView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
+        if not is_senior_user(request.user):
+            return Response({'error': 'Senior or higher access required'}, status=status.HTTP_403_FORBIDDEN)
         months_count = int(request.query_params.get('months', 7))
         
         today = timezone.localtime(timezone.now()).date()
@@ -877,6 +900,8 @@ class DailyOrderVolumeAPIView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
+        if not is_senior_user(request.user):
+            return Response({'error': 'Senior or higher access required'}, status=status.HTTP_403_FORBIDDEN)
         # Get date parameters
         start_date = request.query_params.get('start_date')
         end_date = request.query_params.get('end_date')
@@ -984,6 +1009,8 @@ class MonthlyGrowthTrendAPIView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
+        if not is_senior_user(request.user):
+            return Response({'error': 'Senior or higher access required'}, status=status.HTTP_403_FORBIDDEN)
         # Get date parameters
         start_date_str = request.query_params.get('start_date')
         end_date_str = request.query_params.get('end_date')
@@ -1118,6 +1145,8 @@ class TimelineAlertsAPIView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
+        if not is_senior_user(request.user):
+            return Response({'error': 'Senior or higher access required'}, status=status.HTTP_403_FORBIDDEN)
         # Get reference date (defaults to today)
         reference_date_str = request.query_params.get('reference_date')
         
@@ -1204,6 +1233,8 @@ class CommunicationAnalyticsViewV2(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
+        if not is_senior_user(request.user):
+            return Response({'error': 'Senior or higher access required'}, status=status.HTTP_403_FORBIDDEN)
         # Parse filters
         time_filter = request.query_params.get('time_filter', 'month')
         start_date = request.query_params.get('start_date')
@@ -1499,6 +1530,8 @@ class CustomerAnalyticsView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
+        if not is_senior_user(request.user):
+            return Response({'error': 'Senior or higher access required'}, status=status.HTTP_403_FORBIDDEN)
         # Parse filters
         time_filter = request.query_params.get('time_filter', 'month')
         start_date = request.query_params.get('start_date')
@@ -1846,6 +1879,8 @@ class KPICardsAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        if not is_senior_user(request.user):
+            return Response({'error': 'Senior or higher access required'}, status=status.HTTP_403_FORBIDDEN)
         # Default to last 30 days
         ist_today = timezone.localtime(timezone.now()).date()
         default_start = ist_today - timedelta(days=29)
