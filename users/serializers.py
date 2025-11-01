@@ -147,6 +147,8 @@ class UserCreateSerializer(serializers.ModelSerializer):
         # Validate that passwords match
         if attrs['password'] != attrs['password2']:
             raise serializers.ValidationError({"password": "Password fields didn't match."})
+        if attrs['user_type'] == 'admin':
+            raise serializers.ValidationError({"user_type": "User Type can not be admin"})
         return attrs
     
     def create(self, validated_data):

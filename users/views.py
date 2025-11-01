@@ -34,6 +34,9 @@ def is_admin_user(user):
     """Helper function to check if user is admin"""
     return user.is_authenticated and hasattr(user, 'user_type') and user.user_type.lower() == 'admin'
 
+def is_staff_user(user):
+    """Helper function to check if user is staff or higher"""
+    return user.is_authenticated and hasattr(user, 'user_type') and user.user_type.lower() in ['staff', 'manager', 'senior', 'admin']
 
 class UserRegistrationView(generics.CreateAPIView):
     serializer_class = UserRegistrationSerializer
@@ -235,7 +238,7 @@ class AdminCustomerListView(generics.ListAPIView):
     pagination_class = CustomPagination
 
     def get_queryset(self):
-        if not is_admin_user(self.request.user):
+        if not is_staff_user(self.request.user):
             return User.objects.none()
 
         # Get only customers with related order data for efficiency
@@ -286,7 +289,7 @@ class AdminCustomerLookupView(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        if not user.is_admin_user():
+        if not is_staff_user(user):
             return User.objects.none()
         return User.objects.filter(user_type='customer').order_by('username')
     
