@@ -320,7 +320,7 @@ class AdminNewsDetailView(generics.RetrieveAPIView):
 
     def get_object(self):
         obj = get_object_or_404(NewsItem, id=self.kwargs.get('id'))
-        if not is_admin_user(self.request.user):
+        if not is_manager_user(self.request.user):
             self.permission_denied(self.request, message="Admin access required")
         return obj
 
