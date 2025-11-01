@@ -8,6 +8,11 @@ from django.utils import timezone
 
 User = get_user_model()
 
+def is_staff_user(user):
+    """Helper function to check if user is staff or higher"""
+    return user.is_authenticated and hasattr(user, 'user_type') and user.user_type.lower() in ['staff', 'senior', 'manager', 'admin']
+
+
 class OrderFileSerializer(serializers.ModelSerializer):
     fileType = serializers.CharField(source='file_type', read_only=True)
     uploadedAt = serializers.CharField(source='uploaded_at', read_only=True)
@@ -626,7 +631,7 @@ class MessageCreateSerializer(serializers.ModelSerializer):
                 order = Order.objects.get(order_id=value)
                 # Check if user has access to this order
                 user = self.context['request'].user
-                if not user.is_staff and order.customer != user:
+                if not is_staff_user(user) and order.customer != user:
                     raise serializers.ValidationError("You don't have access to this order.")
                 return order
             except Order.DoesNotExist:

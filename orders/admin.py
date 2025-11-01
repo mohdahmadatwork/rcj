@@ -102,3 +102,88 @@ class ContactAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
+
+
+from django.contrib import admin
+from django.utils.html import format_html
+from .models import Message
+
+@admin.register(Message)
+class MessageAdmin(admin.ModelAdmin):
+    list_display = ['id', 'sender_type_badge', 'sender', 'order_link', 'text_preview', 'is_read', 'read_status', 'created_at']
+    list_filter = ['sender_type', 'is_read', 'is_system_message', 'created_at']
+    search_fields = ['text', 'sender__username', 'sender__email', 'order__order_id']
+    readonly_fields = ['id', 'created_at', 'updated_at']
+    list_editable = ['is_read']
+    date_hierarchy = 'created_at'
+    list_per_page = 50
+    
+    fieldsets = (
+        ('Message Information', {
+            'fields': ('id', 'sender_type', 'sender', 'order')
+        }),
+        ('Content', {
+            'fields': ('text', 'is_system_message')
+        }),
+        ('Status', {
+            'fields': ('is_read',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    # Custom colored badge for sender type
+    def sender_type_badge(self, obj):
+        colors = {
+            'user': '#3498db',
+            'admin': '#e74c3c',
+            'system': '#95a5a6'
+        }
+        color = colors.get(obj.sender_type, '#000')
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 3px 10px; border-radius: 3px;">{}</span>',
+            color,
+            obj.sender_type.upper()
+        )
+    sender_type_badge.short_description = 'Sender Type'
+    
+    # Clickable order link
+    def order_link(self, obj):
+        if obj.order:
+            from django.urls import reverse
+            url = reverse('admin:orders_order_change', args=[obj.order.id])
+            return format_html('<a href="{}">{}</a>', url, obj.order.order_id)
+        return '-'
+    order_link.short_description = 'Order'
+    
+    # Visual read status
+    def read_status(self, obj):
+        if obj.is_read:
+            return format_html('<span style="color: green;">✓ Read</span>')
+        return format_html('<span style="color: red;">✗ Unread</span>')
+    read_status.short_description = 'Status'
+    
+    # Text preview
+    def text_preview(self, obj):
+        return obj.text[:50] + '...' if len(obj.text) > 50 else obj.text
+    text_preview.short_description = 'Message'
+    
+    # Optimize database queries
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.select_related('sender', 'order')
+    
+    # Custom actions
+    actions = ['mark_as_read', 'mark_as_unread']
+    
+    def mark_as_read(self, request, queryset):
+        updated = queryset.update(is_read=True)
+        self.message_user(request, f'{updated} message(s) marked as read.')
+    mark_as_read.short_description = 'Mark selected messages as read'
+    
+    def mark_as_unread(self, request, queryset):
+        updated = queryset.update(is_read=False)
+        self.message_user(request, f'{updated} message(s) marked as unread.')
+    mark_as_unread.short_description = 'Mark selected messages as unread'

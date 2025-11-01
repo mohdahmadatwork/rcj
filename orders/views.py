@@ -985,7 +985,7 @@ class MessageListView(generics.ListAPIView):
         user = self.request.user
         order_id = self.request.query_params.get('order_id')
 
-        if user.is_staff:
+        if is_staff_user(user):
             # Admin can see all messages
             queryset = Message.objects.all()
         else:
@@ -1053,7 +1053,7 @@ class OrderMessagesView(generics.ListAPIView):
             order = Order.objects.get(order_id=order_id)
             
             # Check access permissions
-            if not user.is_staff and order.customer != user:
+            if not is_staff_user(user) and order.customer != user:
                 return Message.objects.none()
             
             return Message.objects.filter(order=order).order_by('created_at')

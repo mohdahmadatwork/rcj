@@ -107,13 +107,18 @@ class Message(models.Model):
 
     class Meta:
         ordering = ['created_at']
-
+    def is_staff_user(self):
+        """Check if the sender is a staff user based on user_type"""
+        return (
+            hasattr(self.sender, 'user_type') and 
+            self.sender.user_type.lower() in ['staff', 'senior', 'manager', 'admin']
+        )
     def save(self, *args, **kwargs):
         # Auto-set sender_type based on user role
         if not self.sender_type:
             if self.is_system_message:
                 self.sender_type = 'system'
-            elif self.sender.is_staff or self.sender.is_superuser:
+            elif self.is_staff_user() or self.sender.is_superuser:
                 self.sender_type = 'admin'
             else:
                 self.sender_type = 'user'

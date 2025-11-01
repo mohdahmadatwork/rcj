@@ -475,3 +475,28 @@ class UserDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [IsAdminUser]
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def customer_change_password(request):
+    user = request.user
+    current_password = request.data.get('current_password')
+    new_password = request.data.get('new_password')
+    if not user.check_password(current_password):
+        return Response({"error": "Current password is incorrect"}, status=400)
+    user.set_password(new_password)
+    user.save()
+    return Response({"success": "Password updated successfully"})
+
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def admin_change_user_password(request):
+    user_id = request.data.get('user_id')
+    new_password = request.data.get('new_password')
+    try:
+        target_user = User.objects.get(pk=user_id)
+        target_user.set_password(new_password)
+        target_user.save()
+        return Response({"success": f"Password updated for user {target_user.username}"})
+    except User.DoesNotExist:
+        return Response({"error": "User not found"}, status=404)
