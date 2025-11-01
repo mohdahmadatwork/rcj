@@ -17,6 +17,10 @@ def is_senior_user(user):
     """Helper function to check if user is senior or higher"""
     return user.is_authenticated and hasattr(user, 'user_type') and user.user_type.lower() in ['senior', 'admin']
 
+def is_staff_user(user):
+    """Helper function to check if user is staff or higher"""
+    return user.is_authenticated and hasattr(user, 'user_type') and user.user_type.lower() in ['staff', 'senior', 'manager', 'admin']
+
 User = get_user_model()
 class DashboardAnalyticsView(APIView):
     """
@@ -45,6 +49,11 @@ class DashboardAnalyticsView(APIView):
         
         If no parameters provided, defaults to last 30 days.
         """
+        if not is_staff_user(request.user):
+            return Response(
+                {'error': 'Staff or higher access required'},
+                status=status.HTTP_403_FORBIDDEN
+            )
         # Validate input
         input_serializer = DateRangeInputSerializer(data=request.query_params)
         

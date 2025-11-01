@@ -134,8 +134,10 @@ class Contact(models.Model):
     STATUS_CHOICES = [
         ('new', 'New'),
         ('in_progress', 'In Progress'),
+        ('replied', 'Replied'),
         ('resolved', 'Resolved'),
         ('closed', 'Closed'),
+        ('archived', 'Archived'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
