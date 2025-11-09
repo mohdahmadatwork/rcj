@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'users',
     'news',
     'analytics',
+    'homepage_new',
     # Django AllAuth
     'django.contrib.sites',
     'allauth',

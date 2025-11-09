@@ -11,6 +11,7 @@ urlpatterns = [
     path('api/auth/', include('users.urls')),
     path('accounts/', include('allauth.urls')),  # Add allauth URLs
     path('api/analytics/', include('analytics.urls')),
+    path('api/work-samples/', include('homepage_new.urls')),
 ]
 
 if settings.DEBUG:
