@@ -1,6 +1,9 @@
 from rest_framework import generics, filters, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.authentication import TokenAuthentication
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.pagination import PageNumberPagination
 from django.db.models import Count, Q
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import Category, WorkSample
@@ -10,14 +13,14 @@ from .serializers import (
     WorkSampleDetailSerializer,
     WorkSampleCreateUpdateSerializer
 )
-from rest_framework.pagination import PageNumberPagination
-from rest_framework.permissions import IsAuthenticated
+
 
 class WorkSamplePagination(PageNumberPagination):
     """Custom pagination for work samples"""
-    page_size = 20  # Default page size
-    page_size_query_param = 'page_size'  # Allow client to override
-    max_page_size = 100  # Maximum limit
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
 
 class CategoryListView(generics.ListAPIView):
     """List all categories with work sample counts"""
@@ -30,9 +33,9 @@ class CategoryListView(generics.ListAPIView):
 
 
 class CategoryDetailView(generics.RetrieveAPIView):
-    """Retrieve a single category by slug"""
+    """Retrieve a single category by ID"""
     serializer_class = CategorySerializer
-    lookup_field = 'slug'
+    lookup_field = 'pk'  # Changed from 'slug' to 'pk'
     
     def get_queryset(self):
         return Category.objects.annotate(
@@ -43,9 +46,9 @@ class CategoryDetailView(generics.RetrieveAPIView):
 class WorkSampleListView(generics.ListAPIView):
     """List all work samples with filtering and search"""
     serializer_class = WorkSampleListSerializer
-    pagination_class = WorkSamplePagination  # Enable pagination
-    # authentication_classes = [TokenAuthentication]  # Support Token auth
-    permission_classes = [IsAuthenticated]  # Require authentication
+    pagination_class = WorkSamplePagination
+    # authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
     
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['category__slug', 'is_featured', 'is_active']
@@ -54,7 +57,6 @@ class WorkSampleListView(generics.ListAPIView):
     ordering = ['display_order', '-created_at']
 
     def get_queryset(self):
-        # Admin can see all work samples (active and inactive)
         queryset = WorkSample.objects.all().select_related('category')
         
         # Filter by category if provided
@@ -71,32 +73,40 @@ class WorkSampleListView(generics.ListAPIView):
 
 
 class WorkSampleDetailView(generics.RetrieveAPIView):
-    """Retrieve a single work sample by slug"""
-    queryset = WorkSample.objects.filter(is_active=True).select_related('category')
+    """Retrieve a single work sample by ID"""
+    queryset = WorkSample.objects.all().select_related('category')
     serializer_class = WorkSampleDetailSerializer
-    lookup_field = 'slug'
+    lookup_field = 'pk'  # Changed from 'slug' to 'pk'
+    # authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
 
 
 class WorkSampleCreateView(generics.CreateAPIView):
     """Create a new work sample"""
     queryset = WorkSample.objects.all()
     serializer_class = WorkSampleCreateUpdateSerializer
+    # authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAdminUser]
 
     def perform_create(self, serializer):
         serializer.save()
 
 
 class WorkSampleUpdateView(generics.UpdateAPIView):
-    """Update an existing work sample"""
+    """Update an existing work sample by ID"""
     queryset = WorkSample.objects.all()
     serializer_class = WorkSampleCreateUpdateSerializer
-    lookup_field = 'slug'
+    lookup_field = 'pk'  # Changed from 'slug' to 'pk'
+    # authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAdminUser]
 
 
 class WorkSampleDeleteView(generics.DestroyAPIView):
-    """Delete a work sample"""
+    """Delete a work sample by ID"""
     queryset = WorkSample.objects.all()
-    lookup_field = 'slug'
+    lookup_field = 'pk'  # Changed from 'slug' to 'pk'
+    # authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAdminUser]
 
 
 class PortfolioOverviewView(APIView):

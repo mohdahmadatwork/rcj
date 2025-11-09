@@ -10,7 +10,9 @@ from .views import (
     PortfolioOverviewView
 )
 
+
 app_name = 'portfolio'
+
 
 urlpatterns = [
     # Portfolio overview endpoint (matches your frontend screen)
@@ -18,12 +20,12 @@ urlpatterns = [
     
     # Category endpoints
     path('categories/', CategoryListView.as_view(), name='category-list'),
-    path('categories/<slug:slug>/', CategoryDetailView.as_view(), name='category-detail'),
+    path('categories/<int:pk>/', CategoryDetailView.as_view(), name='category-detail'),
     
-    # Work sample endpoints
+    # Work sample endpoints (ID-based)
     path('', WorkSampleListView.as_view(), name='work-sample-list'),
     path('create/', WorkSampleCreateView.as_view(), name='work-sample-create'),
-    path('<slug:slug>/', WorkSampleDetailView.as_view(), name='work-sample-detail'),
-    path('<slug:slug>/update/', WorkSampleUpdateView.as_view(), name='work-sample-update'),
-    path('<slug:slug>/delete/', WorkSampleDeleteView.as_view(), name='work-sample-delete'),
+    path('<int:pk>/', WorkSampleDetailView.as_view(), name='work-sample-detail'),
+    path('<int:pk>/update/', WorkSampleUpdateView.as_view(), name='work-sample-update'),
+    path('<int:pk>/delete/', WorkSampleDeleteView.as_view(), name='work-sample-delete'),
 ]
