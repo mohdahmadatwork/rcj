@@ -7,7 +7,8 @@ from .views import (
     WorkSampleCreateView,
     WorkSampleUpdateView,
     WorkSampleDeleteView,
-    PortfolioOverviewView
+    PortfolioOverviewView,
+    PublicWorkSampleListView
 )
 
 
@@ -28,4 +29,6 @@ urlpatterns = [
     path('<int:pk>/', WorkSampleDetailView.as_view(), name='work-sample-detail'),
     path('<int:pk>/update/', WorkSampleUpdateView.as_view(), name='work-sample-update'),
     path('<int:pk>/delete/', WorkSampleDeleteView.as_view(), name='work-sample-delete'),
+
+    path('public/', PublicWorkSampleListView.as_view(), name='public-work-sample-list')
 ]

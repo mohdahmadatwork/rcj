@@ -142,3 +142,34 @@ class PortfolioOverviewView(APIView):
             overview_data['categories'].append(category_data)
         
         return Response(overview_data, status=status.HTTP_200_OK)
+
+
+
+class PublicWorkSampleListView(generics.ListAPIView):
+    """Public API for client-side - shows only active work samples without pagination"""
+    serializer_class = WorkSampleListSerializer
+    authentication_classes = []  # No authentication required
+    permission_classes = []  # Public access
+    pagination_class = None  # Disable pagination
+    
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['category__slug', 'is_featured']
+    search_fields = ['title', 'description']
+    ordering_fields = ['display_order', 'created_at', 'title']
+    ordering = ['display_order', '-created_at']
+
+    def get_queryset(self):
+        # Only return active work samples for public
+        queryset = WorkSample.objects.filter(is_active=True).select_related('category')
+        
+        # Filter by category if provided
+        category_slug = self.request.query_params.get('category', None)
+        if category_slug:
+            queryset = queryset.filter(category__slug=category_slug)
+        
+        # Filter featured items if requested
+        featured = self.request.query_params.get('featured', None)
+        if featured is not None:
+            queryset = queryset.filter(is_featured=True)
+        
+        return queryset
