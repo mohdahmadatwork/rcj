@@ -173,3 +173,44 @@ class PublicWorkSampleListView(generics.ListAPIView):
             queryset = queryset.filter(is_featured=True)
         
         return queryset
+
+
+class CategoryDetailView(generics.RetrieveAPIView):
+    """Get category by ID - Public endpoint"""
+    serializer_class = CategorySerializer
+    authentication_classes = []
+    permission_classes = []
+    lookup_field = 'pk'
+    
+    def get_queryset(self):
+        return Category.objects.annotate(
+            work_samples_count=Count('work_samples', filter=Q(work_samples__is_active=True))
+        )
+
+
+class CategoryCreateView(generics.CreateAPIView):
+    """Create new category - Admin only"""
+    queryset = Category.objects.all()
+    serializer_class = CategorySerializer
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAdminUser]
+
+    def perform_create(self, serializer):
+        serializer.save()
+
+
+class CategoryUpdateView(generics.UpdateAPIView):
+    """Update category by ID - Admin only"""
+    queryset = Category.objects.all()
+    serializer_class = CategorySerializer
+    lookup_field = 'pk'
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAdminUser]
+
+
+class CategoryDeleteView(generics.DestroyAPIView):
+    """Delete category by ID - Admin only"""
+    queryset = Category.objects.all()
+    lookup_field = 'pk'
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAdminUser]
