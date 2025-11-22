@@ -15,13 +15,15 @@ from .serializers import (
     UserDetailSerializer,
     CustomerListSerializer,
     CustomerLookupSerializer,
-    UserListSerializer
+    UserListSerializer,
+    UserStatusUpdateSerializer
 )
 from dj_rest_auth.registration.views import SocialLoginView
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
 from allauth.socialaccount.providers.oauth2.client import OAuth2Client
 from .serializers import UserDetailSerializer
 from rest_framework.pagination import PageNumberPagination
+from rest_framework import serializers
 
 User = get_user_model()
 
@@ -59,17 +61,41 @@ class UserRegistrationView(generics.CreateAPIView):
 @permission_classes([AllowAny])
 def user_login(request):
     serializer = UserLoginSerializer(data=request.data)
+    
+    # Don't use is_valid() in try-except, call it directly
     if serializer.is_valid():
         user = serializer.validated_data['user']
         token, created = Token.objects.get_or_create(user=user)
-        
         user_serializer = UserDetailSerializer(user)
         
         return Response({
             'token': token.key,
             'user': user_serializer.data
         })
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    else:
+        # Check if it's a deactivation error (dictionary with detailed info)
+        errors = serializer.errors
+        
+        # Check if the error structure indicates a deactivation
+        if 'message' in errors and 'deactivation_reason' in errors:
+            # Reconstruct the proper error detail
+            error_detail = {
+                'message': errors['message'][0] if isinstance(errors['message'], list) else errors['message'],
+                'deactivation_reason': errors['deactivation_reason'][0] if isinstance(errors['deactivation_reason'], list) else errors['deactivation_reason'],
+                'reactivation_instructions': errors['reactivation_instructions'][0] if isinstance(errors['reactivation_instructions'], list) else errors['reactivation_instructions'],
+                'deactivated_at': errors['deactivated_at'][0] if isinstance(errors['deactivated_at'], list) else errors['deactivated_at'],
+                'contact_support': True
+            }
+            return Response(
+                {
+                    'error': 'Account Deactivated',
+                    'details': error_detail
+                },
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Standard validation error
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST', 'DELETE'])
 @permission_classes([IsAuthenticated])
@@ -478,6 +504,49 @@ class UserDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [IsAdminUser]
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAdminUser])
+def update_user_status(request, pk):
+    """
+    API endpoint to update user active status with deactivation reason
+    Admin only
+    """
+    try:
+        user = User.objects.get(pk=pk)
+    except User.DoesNotExist:
+        return Response(
+            {"error": "User not found"}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    # Prevent admin from deactivating themselves
+    if user.id == request.user.id:
+        return Response(
+            {"error": "You cannot deactivate your own account"}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    serializer = UserStatusUpdateSerializer(
+        user, 
+        data=request.data, 
+        partial=True,
+        context={'request': request}
+    )
+    
+    if serializer.is_valid():
+        serializer.save()
+        
+        # Return updated user data
+        user_serializer = UserSerializer(user)
+        return Response({
+            "message": f"User {user.username} status updated successfully",
+            "user": user_serializer.data
+        }, status=status.HTTP_200_OK)
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])

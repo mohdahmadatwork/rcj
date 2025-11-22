@@ -16,6 +16,7 @@ urlpatterns = [
     path('users/<int:pk>/', views.UserDetailAPIView.as_view(), name='user-detail'),
     # Add Google login
     path('google/', views.GoogleLogin.as_view(), name='google_login'),
+    path('admin/users/<int:pk>/status/', views.update_user_status, name='update-user-status'),
     
     # Add dj-rest-auth URLs
     path('', include('dj_rest_auth.urls')),

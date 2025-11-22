@@ -49,6 +49,7 @@ class CustomRegisterSerializer(RegisterSerializer):
         user.user_type = 'customer'
         user.save(update_fields=['first_name', 'last_name', 'phone', 'user_type'])
 
+# Update the UserLoginSerializer to include deactivation details
 class UserLoginSerializer(serializers.Serializer):
     username = serializers.CharField()
     password = serializers.CharField()
@@ -58,13 +59,27 @@ class UserLoginSerializer(serializers.Serializer):
         password = data.get('password')
         
         if username and password:
-            user = authenticate(username=username, password=password)
-            if user:
+            user = User.objects.get(username=username)
+            # user = authenticate(username=username, password=password)
+            print(user)
+            print(f"is_active: {user.is_active}")
+            print(f"deactivation_reason: {user.deactivation_reason}")
+            print(f"reactivation_instructions: {user.reactivation_instructions}")
+            print(f"deactivated_at: {user.deactivated_at}")
+            if user.check_password(password):
                 if user.is_active:
                     data['user'] = user
                     return data
                 else:
-                    raise serializers.ValidationError('User account is disabled.')
+                    # User account is disabled - provide detailed reason
+                    error_detail = {
+                        'message': 'Your account has been deactivated by the administrator.',
+                        'deactivation_reason': user.deactivation_reason or 'No reason provided',
+                        'reactivation_instructions': user.reactivation_instructions or 'Please contact support for assistance.',
+                        'deactivated_at': user.deactivated_at,
+                        'contact_support': True
+                    }
+                    raise serializers.ValidationError(error_detail)
             else:
                 raise serializers.ValidationError('Invalid username or password.')
         else:
@@ -169,29 +184,43 @@ class UserCreateSerializer(serializers.ModelSerializer):
         return user
 
 
+# Add this to the existing UserSerializer class
 class UserSerializer(serializers.ModelSerializer):
     """Serializer for listing/retrieving users (without password)"""
+    deactivated_by_username = serializers.CharField(source='deactivated_by.username', read_only=True, allow_null=True)
+    
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'user_type', 'phone', 'client_id', 'is_active', 'date_joined']
-        read_only_fields = ['id', 'client_id', 'date_joined']
+        fields = [
+            'id', 'username', 'email', 'first_name', 'last_name', 
+            'user_type', 'phone', 'client_id', 'is_active', 'date_joined',
+            'deactivation_reason', 'reactivation_instructions', 
+            'deactivated_at', 'deactivated_by_username'
+        ]
+        read_only_fields = ['id', 'client_id', 'date_joined', 'deactivated_at', 'deactivated_by_username']
 
 
 class UserListSerializer(serializers.ModelSerializer):
     """Serializer for listing users"""
+    deactivated_by_username = serializers.CharField(source='deactivated_by.username', read_only=True, allow_null=True)
+    
     class Meta:
         model = User
         fields = [
-            'id', 
-            'username', 
-            'email', 
-            'first_name', 
-            'last_name', 
-            'user_type', 
-            'phone', 
-            'client_id', 
-            'is_active', 
-            'date_joined'
+            'id',
+            'username',
+            'email',
+            'first_name',
+            'last_name',
+            'user_type',
+            'phone',
+            'client_id',
+            'is_active',
+            'date_joined',
+            'deactivation_reason',
+            'reactivation_instructions',
+            'deactivated_at',
+            'deactivated_by_username'
         ]
         read_only_fields = fields
 
@@ -202,3 +231,46 @@ class UserStatsSerializer(serializers.Serializer):
     admin_users = serializers.IntegerField()
     customers = serializers.IntegerField()
     inactive_users = serializers.IntegerField()
+
+
+class UserStatusUpdateSerializer(serializers.ModelSerializer):
+    """Serializer for updating user active status with reason"""
+    
+    class Meta:
+        model = User
+        fields = ['is_active', 'deactivation_reason', 'reactivation_instructions']
+    
+    def validate(self, attrs):
+        # If deactivating user (is_active = False), require reason and instructions
+        if not attrs.get('is_active', True):
+            if not attrs.get('deactivation_reason'):
+                raise serializers.ValidationError({
+                    "deactivation_reason": "Deactivation reason is required when deactivating a user."
+                })
+            if not attrs.get('reactivation_instructions'):
+                raise serializers.ValidationError({
+                    "reactivation_instructions": "Reactivation instructions are required when deactivating a user."
+                })
+        return attrs
+    
+    def update(self, instance, validated_data):
+        request = self.context.get('request')
+        is_active = validated_data.get('is_active', instance.is_active)
+        
+        if not is_active and instance.is_active:
+            # User is being deactivated
+            instance.deactivation_reason = validated_data.get('deactivation_reason')
+            instance.reactivation_instructions = validated_data.get('reactivation_instructions')
+            instance.deactivated_at = datetime.now()
+            if request and request.user:
+                instance.deactivated_by = request.user
+        elif is_active and not instance.is_active:
+            # User is being reactivated - clear deactivation data
+            instance.deactivation_reason = None
+            instance.reactivation_instructions = None
+            instance.deactivated_at = None
+            instance.deactivated_by = None
+        
+        instance.is_active = is_active
+        instance.save()
+        return instance
