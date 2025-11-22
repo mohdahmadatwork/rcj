@@ -293,6 +293,8 @@ EMAIL_HOST_USER = config('EMAIL_HOST_USER',default='royalcraftjewelers@gmail.com
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD',default='ABC')
 DEFAULT_FROM_EMAIL = config('EMAIL_HOST_USER',default='royalcraftjewelers')
 
+ADMIN_EMAIL = config('ADMIN_EMAIL', default='royalcraftjewelers@gmail.com')
+
 # Celery Configuration
 CELERY_BROKER_URL = config('REDIS_URL', default='redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = config('REDIS_URL', default='redis://localhost:6379/0')
@@ -300,3 +302,11 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Asia/Kolkata'
+
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
+CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes
+
+MAX_BACKUP_EMAIL_SIZE_MB = 25
+BACKUP_RETENTION_DAYS = 30
+BACKUP_DIR = os.path.join(BASE_DIR, 'media', 'backups')

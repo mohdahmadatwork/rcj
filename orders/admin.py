@@ -1,6 +1,18 @@
 # orders/admin.py
 from django.contrib import admin
 from .models import Order, OrderFile, OrderLog, Contact
+from django.core.management import call_command
+from django.contrib import messages
+
+@admin.action(description='Create backup of today\'s data')
+def create_backup_action(modeladmin, request, queryset):
+    try:
+        call_command('backup_daily_data')
+        messages.success(request, 'Backup created successfully!')
+    except Exception as e:
+        messages.error(request, f'Backup failed: {str(e)}')
+
+
 
 class OrderFileInline(admin.TabularInline):
     model = OrderFile
@@ -41,7 +53,9 @@ class OrderAdmin(admin.ModelAdmin):
     )
     
     inlines = [OrderFileInline, OrderLogInline]
-    
+
+    actions = [create_backup_action]
+
     def save_model(self, request, obj, form, change):
         if not change:  # If creating new object
             obj.created_by = request.user
