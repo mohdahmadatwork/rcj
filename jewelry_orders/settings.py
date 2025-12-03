@@ -295,6 +295,11 @@ DEFAULT_FROM_EMAIL = config('EMAIL_HOST_USER',default='royalcraftjewelers')
 
 ADMIN_EMAIL = config('ADMIN_EMAIL', default='royalcraftjewelers@gmail.com')
 
+# WhatsApp API Configuration
+WHATSAPP_API_BASE_URL = config('WHATSAPP_API_BASE_URL', default='http://localhost:8080')
+WHATSAPP_API_KEY = config('WHATSAPP_API_KEY', default='C74709FD0F08-43B5-BA0C-D76E962F33EC')
+WHATSAPP_INSTANCE_NAME = config('WHATSAPP_INSTANCE_NAME', default='test')
+
 # Celery Configuration
 CELERY_BROKER_URL = config('REDIS_URL', default='redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = config('REDIS_URL', default='redis://localhost:6379/0')
