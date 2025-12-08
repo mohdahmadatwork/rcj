@@ -175,14 +175,14 @@ def handle_order_status_change_whatsapp(instance):
         'declined': f"Your order {instance.order_id} could not be processed. Contact support.",
     }
     
-    message = messages.get(instance.status)
+    message = messages.get(instance.order_status)
     if not message:
-        logger.warning(f"No message for status {instance.status}")
+        logger.warning(f"No message for status {instance.order_status}")
         return
     
     try:
         send_whatsapp_message(phone_number, message)
-        logger.info(f"WhatsApp sent for order {instance.order_id} - Status: {instance.status}")
+        logger.info(f"WhatsApp sent for order {instance.order_id} - Status: {instance.order_status}")
     except Exception as e:
         logger.error(f"Error sending WhatsApp for order {instance.order_id}: {str(e)}")
         
