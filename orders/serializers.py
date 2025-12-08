@@ -517,6 +517,9 @@ class OrderAdminUpdateSerializer(serializers.ModelSerializer):
     gold_color = serializers.CharField(required=False, allow_blank=True)
     description = serializers.CharField(required=False, allow_blank=True)
     declined_reason = serializers.CharField(required=False, allow_blank=True)
+    email = serializers.EmailField(required=False)
+    full_name = serializers.CharField(required=False)
+    contact_number = serializers.CharField(required=False)
 
     class Meta:
         model = Order
@@ -531,7 +534,10 @@ class OrderAdminUpdateSerializer(serializers.ModelSerializer):
             'gold_weight',
             'gold_color',
             'description',
-            'declined_reason'
+            'declined_reason',
+            'email',
+            'full_name',
+            'contact_number'
         ]
 
     def validate_status(self, value):
