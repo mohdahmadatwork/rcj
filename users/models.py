@@ -29,7 +29,7 @@ class CustomUser(AbstractUser):
     )
     def save(self, *args, **kwargs):
         # Generate client_id for customers if not exists
-        if not self.client_id and self.user_type == 'customer':
+        if not self.client_id:
             self.client_id = f"CLI{datetime.now().strftime('%Y%m%d')}{str(uuid.uuid4())[:6].upper()}"
         super().save(*args, **kwargs)
     
