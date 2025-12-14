@@ -1,6 +1,6 @@
-# users/urls.py
 from django.urls import path, include
 from . import views
+from dj_rest_auth.views import PasswordResetConfirmView
 
 urlpatterns = [
     path('register/', views.UserRegistrationView.as_view(), name='user-register'),
@@ -19,6 +19,8 @@ urlpatterns = [
     path('admin/users/<int:pk>/status/', views.update_user_status, name='update-user-status'),
     
     # Add dj-rest-auth URLs
+    # Updated path to use PasswordResetConfirmView
+    path('password/reset/confirm/<uidb64>/<token>/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
     path('', include('dj_rest_auth.urls')),
     path('registration/', include('dj_rest_auth.registration.urls')),
 ]

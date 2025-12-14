@@ -6,6 +6,21 @@ from allauth.socialaccount.models import SocialAccount
 
 User = get_user_model()
 
+from allauth.account.adapter import DefaultAccountAdapter
+from django.conf import settings
+
+class CustomAccountAdapter(DefaultAccountAdapter):
+    def send_mail(self, template_prefix, email, context):
+        # Ensure we use the configured frontend URL
+        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        context['frontend_url'] = frontend_url
+        super().send_mail(template_prefix, email, context)
+
+    def get_email_context(self, request, **kwargs):
+        context = super().get_email_context(request, **kwargs)
+        context['frontend_url'] = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        return context
+
 class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
     def pre_social_login(self, request, sociallogin):
         # Link to existing user by email

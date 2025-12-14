@@ -278,10 +278,12 @@ REST_AUTH = {
     'USE_JWT': False,  # Keep using Token auth for consistency
     'SESSION_LOGIN': False,
     'REGISTER_SERIALIZER': 'users.serializers.CustomRegisterSerializer',
+    'PASSWORD_RESET_SERIALIZER': 'users.serializers.CustomPasswordResetSerializer',
 }
 
 # settings.py
 SOCIALACCOUNT_ADAPTER = 'users.adapters.CustomSocialAccountAdapter'
+ACCOUNT_ADAPTER = 'users.adapters.CustomAccountAdapter'
 
 
 
@@ -300,6 +302,10 @@ ADMIN_EMAIL = config('ADMIN_EMAIL', default='royalcraftjewelers@gmail.com')
 WHATSAPP_API_BASE_URL = config('WHATSAPP_API_BASE_URL', default='http://localhost:8080')
 WHATSAPP_API_KEY = config('WHATSAPP_API_KEY', default='C74709FD0F08-43B5-BA0C-D76E962F33EC')
 WHATSAPP_INSTANCE_NAME = config('WHATSAPP_INSTANCE_NAME', default='test')
+
+# Frontend Configuration
+FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5173')
+
 
 # Celery Configuration
 CELERY_BROKER_URL = config('REDIS_URL', default='redis://localhost:6379/0')

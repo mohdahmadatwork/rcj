@@ -59,7 +59,11 @@ class UserLoginSerializer(serializers.Serializer):
         password = data.get('password')
         
         if username and password:
-            user = User.objects.get(username=username)
+            try:
+                user = User.objects.get(username=username)
+            except User.DoesNotExist:
+                raise serializers.ValidationError('Invalid username or password.')
+
             # user = authenticate(username=username, password=password)
             print(user)
             print(f"is_active: {user.is_active}")
@@ -273,4 +277,31 @@ class UserStatusUpdateSerializer(serializers.ModelSerializer):
         
         instance.is_active = is_active
         instance.save()
+        instance.save()
         return instance
+
+from dj_rest_auth.serializers import PasswordResetSerializer
+from django.conf import settings
+
+class CustomPasswordResetSerializer(PasswordResetSerializer):
+    def save(self):
+        request = self.context.get('request')
+        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+        
+        # Extract domain from FRONTEND_URL for domain_override if needed (stripping http/https)
+        # But primarily we rely on 'frontend_url' context variable in the template.
+        domain = frontend_url.replace('http://', '').replace('https://', '').split('/')[0]
+
+        opts = {
+            'use_https': request.is_secure(),
+            'from_email': getattr(settings, 'DEFAULT_FROM_EMAIL', None),
+            'request': request,
+            'domain_override': domain,
+            'extra_email_context': {
+                'domain': domain,
+                'site_name': 'Royal Craft Jewelers',
+                'frontend_url': frontend_url,
+            },
+            'email_template_name': 'registration/frontend_password_reset_email.html',
+        }
+        return self.reset_form.save(**opts)
