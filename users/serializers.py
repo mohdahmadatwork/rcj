@@ -25,6 +25,15 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         model = User
         fields = ['username', 'email', 'password', 'password_confirm', 'phone', 'first_name', 'last_name']
     
+    def validate_phone(self, value):
+        if not value:
+            return value
+        if not value.isdigit():
+            raise serializers.ValidationError("Phone number must contain only digits.")
+        if len(value) != 10:
+            raise serializers.ValidationError("Phone number must be exactly 10 digits.")
+        return value
+
     def validate(self, data):
         if data['password'] != data['password_confirm']:
             raise serializers.ValidationError("Passwords don't match")
@@ -41,6 +50,15 @@ class CustomRegisterSerializer(RegisterSerializer):
     first_name = serializers.CharField(required=False, allow_blank=True)
     last_name = serializers.CharField(required=False, allow_blank=True)
     phone = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_phone(self, value):
+        if not value:
+            return value
+        if not value.isdigit():
+            raise serializers.ValidationError("Phone number must contain only digits.")
+        if len(value) != 10:
+            raise serializers.ValidationError("Phone number must be exactly 10 digits.")
+        return value
     
     def custom_signup(self, request, user):
         user.first_name = self.validated_data.get('first_name', '')
@@ -161,6 +179,15 @@ class UserCreateSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'email': {'required': True},
         }
+
+    def validate_phone(self, value):
+        if not value:
+            return value
+        if not value.isdigit():
+            raise serializers.ValidationError("Phone number must contain only digits.")
+        if len(value) != 10:
+            raise serializers.ValidationError("Phone number must be exactly 10 digits.")
+        return value
     
     def validate(self, attrs):
         # Validate that passwords match

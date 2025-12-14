@@ -13,7 +13,7 @@ class CustomUser(AbstractUser):
         ('manager', 'Manager'),
     )
     user_type = models.CharField(max_length=10, choices=USER_TYPES, default='customer')
-    phone = models.CharField(max_length=15, blank=True)
+    phone = models.CharField(max_length=15, blank=True, null=True, unique=True)
     client_id = models.CharField(max_length=20, unique=True, blank=True, null=True)
      # New fields for deactivation
     deactivation_reason = models.TextField(blank=True, null=True, help_text="Reason why the user was deactivated")
