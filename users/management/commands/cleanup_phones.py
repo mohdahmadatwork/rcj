@@ -1,7 +1,7 @@
-from django.core.management.base import BaseManagementCommand
+from django.core.management.base import BaseCommand
 from users.models import CustomUser
 
-class Command(BaseManagementCommand):
+class Command(BaseCommand):
     help = 'Cleans up empty phone numbers by setting them to NULL'
 
     def handle(self, *args, **options):
