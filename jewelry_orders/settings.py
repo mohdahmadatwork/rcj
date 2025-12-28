@@ -120,6 +120,7 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 CORS_ALLOWED_ORIGINS = [
     "https://royalcraftjewelers-129ef.web.app",
+    "https://royalcraftjewellers-admi-56f71.web.app",
     "https://rcj-production.up.railway.app",
     'http://localhost',
 ]
