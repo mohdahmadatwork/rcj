@@ -620,6 +620,44 @@ def my_contact_requests(request):
     
     return Response(data, status=status.HTTP_200_OK)
 
+@api_view(['GET'])
+def my_contact_request_detail(request, ticket_number):
+    """
+    Get details of a specific contact request
+    """
+    if not request.user.is_authenticated:
+        return Response(
+            {'error': 'Authentication required'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+    
+    try:
+        contact = Contact.objects.get(ticket_number=ticket_number, user=request.user)
+    except Contact.DoesNotExist:
+        return Response(
+            {'error': 'Contact request not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    data = {
+        'id': str(contact.id),
+        'ticket_number': contact.ticket_number,
+        'full_name': contact.full_name,
+        'email': contact.email,
+        'phone': contact.phone,
+        'subject': contact.subject,
+        'message': contact.message,
+        'status': contact.status,
+        'preferred_contact_method': contact.preferred_contact_method,
+        'order_related': contact.order_related,
+        'order_id': contact.order_id,
+        'created_at': contact.created_at.isoformat(),
+        'admin_response': contact.admin_response,
+        'responded_at': contact.responded_at.isoformat() if contact.responded_at else None,
+    }
+    
+    return Response(data, status=status.HTTP_200_OK)
+
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdminUser])
