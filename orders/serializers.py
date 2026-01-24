@@ -42,7 +42,8 @@ class OrderCreateSerializer(serializers.ModelSerializer):
         fields = [
             'full_name', 'contact_number', 'email', 'description',
             'special_requirements', 'diamond_size', 'gold_weight',
-            'preferred_delivery_date', 'address', 'files', 'gold_color'
+            'preferred_delivery_date', 'address', 'files', 'gold_color',
+            'product_category', 'product_size', 'product_unit'
         ]
     
     def create(self, validated_data):
@@ -139,7 +140,8 @@ class OrderAdminCreateSerializer(serializers.ModelSerializer):
         fields = [
             'client_id','full_name', 'contact_number', 'email', 'description',
             'special_requirements', 'diamond_size', 'gold_weight',
-            'preferred_delivery_date', 'address', 'files', 'gold_color'
+            'preferred_delivery_date', 'address', 'files', 'gold_color',
+            'product_category', 'product_size', 'product_unit'
         ]
     
     def create(self, validated_data):
@@ -235,7 +237,12 @@ class OrderStatusSerializer(serializers.ModelSerializer):
     # estimatedValue = serializers.CharField(source='estimated_value', read_only=True)
     address = serializers.CharField(read_only=True)
     images = OrderFileSerializer(source='files', many=True, read_only=True)
+    address = serializers.CharField(read_only=True)
+    images = OrderFileSerializer(source='files', many=True, read_only=True)
     goldColor = serializers.CharField(source='gold_color', read_only=True)
+    productCategory = serializers.CharField(source='product_category', read_only=True)
+    productSize = serializers.CharField(source='product_size', read_only=True)
+    productUnit = serializers.CharField(source='product_unit', read_only=True)
     class Meta:
         model = Order
         fields = [
@@ -256,7 +263,11 @@ class OrderStatusSerializer(serializers.ModelSerializer):
             # 'estimatedValue',
             'images',
             'declinedReason',
+            'declinedReason',
             'goldColor',
+            'productCategory',
+            'productSize',
+            'productUnit'
         ]
 
     def get_currentStage(self, obj):
@@ -285,7 +296,10 @@ class OrderAdminStatusSerializer(serializers.ModelSerializer):
     special_requirements = serializers.CharField(read_only=True)
     diamond_size = serializers.CharField(read_only=True)
     gold_weight = serializers.CharField(read_only=True)
+    gold_weight = serializers.CharField(read_only=True)
     gold_color = serializers.CharField(read_only=True)
+    product_category = serializers.CharField(read_only=True)
+    product_size = serializers.CharField(read_only=True)
     preferred_delivery_date = serializers.DateField(read_only=True)
     address = serializers.CharField(read_only=True)
     status = serializers.CharField(source='order_status', read_only=True)
@@ -318,7 +332,12 @@ class OrderAdminStatusSerializer(serializers.ModelSerializer):
             'final_price',
             'notes',
             'media',
-            'declined_reason'
+            'notes',
+            'media',
+            'declined_reason',
+            'product_category',
+            'product_size',
+            'product_unit'
         ]
 # Admin serializers remain the same
 class OrderListSerializer(serializers.ModelSerializer):
@@ -520,6 +539,9 @@ class OrderAdminUpdateSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(required=False)
     full_name = serializers.CharField(required=False)
     contact_number = serializers.CharField(required=False)
+    product_category = serializers.CharField(required=False, allow_blank=True)
+    product_size = serializers.CharField(required=False, allow_blank=True)
+    product_unit = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = Order
@@ -537,7 +559,10 @@ class OrderAdminUpdateSerializer(serializers.ModelSerializer):
             'declined_reason',
             'email',
             'full_name',
-            'contact_number'
+            'contact_number',
+            'product_category',
+            'product_size',
+            'product_unit'
         ]
 
     def validate_status(self, value):

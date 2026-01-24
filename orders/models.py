@@ -19,6 +19,18 @@ class Order(models.Model):
         ('ready', 'Ready'),
         ('delivered', 'Delivered'),
     ]
+
+    PRODUCT_CATEGORY_CHOICES = [
+        ('ring_band', 'Ring/Band'),
+        ('bangle_bracelet_tennis', 'Bangel/Bracelet/Tennis'),
+        ('kamarband', 'Kamarband'),
+        ('necklace_choker_chain', 'Necklace/Choker/Chain'),
+        ('pendant_tanmaniya', 'Pendant/Tanmaniya'),
+        ('earring_maang_tikka', 'Earring/Mang Tikka'),
+        ('brooch', 'Brooch'),
+        ('toe_nose_ring', 'Toe Ring/Nose Ring (Nath)'),
+        ('other', 'Other'),
+    ]
     
     order_id = models.CharField(max_length=20, unique=True, editable=False)
     client_id = models.CharField(max_length=20)  # This will be user's client_id
@@ -27,6 +39,11 @@ class Order(models.Model):
     contact_number = models.CharField(max_length=20)
     email = models.EmailField()
     description = models.TextField()
+    
+    product_category = models.CharField(max_length=50, choices=PRODUCT_CATEGORY_CHOICES, default='other')
+    product_size = models.CharField(max_length=100, blank=True, null=True)
+    product_unit = models.CharField(max_length=20, blank=True, null=True)
+
     special_requirements = models.TextField(blank=True, null=True)
     diamond_size = models.CharField(max_length=100, blank=True, null=True)
     gold_weight = models.CharField(max_length=100, blank=True, null=True)
